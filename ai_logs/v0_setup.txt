@@ -1,0 +1,34 @@
+[SESSION] Setup inicial do projeto — Claude (Cowork)
+[DATA] 2026-09-07
+
+PROMPT DO USUÁRIO:
+Quero ajuda para organizar o desafio da Wonder Brains (Generalist Technical
+Artist, Playable Ads): recriar o gameplay do vídeo de referência em
+Three.js/Vite, com duas versões (primitiva e Fish of Fortune reskin), 3
+iterações documentadas (v1/v2/v3) e logs de prompts em /ai_logs.
+
+ANÁLISE FEITA PELA IA:
+- Leitura do PDF de especificação (estrutura de entrega, requisitos de cada
+  versão, ferramentas obrigatórias).
+- Extração de frames do vídeo de referência (~47s) para identificar a
+  mecânica: fila de personagens numerados na parte inferior da tela; o
+  jogador seleciona/arrasta um personagem para uma esteira que percorre um
+  loop retangular sobre uma pista quadriculada; o personagem carrega um
+  contador numérico que muda durante o percurso; existe um indicador de
+  progresso "X/5" no canto superior esquerdo indicando etapas concluídas.
+
+DECISÃO:
+- Estrutura de repositório único com duas pastas Vite independentes
+  (primitive_version, styled_fof_version), assets e ai_logs na raiz,
+  conforme exigido no PDF.
+- v1 primeiro extrai a lógica de jogo pura (estado/regras) para poder ser
+  reaproveitada sem alteração na v2 e na versão estilizada — só a camada de
+  renderização muda entre Versão A e Versão B.
+
+PRÓXIMOS PASSOS:
+- Assistir ao vídeo completo (não só frames) para confirmar: método exato de
+  input (drag vs tap), condição de vitória, e o que acontece em caso de erro
+  (personagem errado selecionado).
+- Implementar v1 (primitive_version): grid quadriculado, pista em loop,
+  spawner de personagens numerados, lógica de coleta e contagem, tela de
+  vitória.
