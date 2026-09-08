@@ -1,0 +1,126 @@
+v1n — Direção da fila de tiles (de vez), esteira 15% maior, sombras da fila e fechamento da V1
+================================================================================================
+
+Feedback recebido (verbatim, com 1 imagem mostrando o estado atual — o resultado do v1m, uma
+cascata diagonal):
+
+"vc continua n acertando a posicao do tile, a imagem 1 mostra como o jogo esta agora, e os tiles
+estao com a face maior virada para o sul. e estao formando uma fila verticalmente de sul ao
+norte. e n quero isso. quero q estejam virado 90 graus, os fazendo ficar com a face maior virada
+para a direita(leste) formando uma fila horizontal do oeste ao leste.; quero a esteira 15% maior,
+mantendo a proporcao da espessura da esteira, quero q preencha ligeiramente mais o espaçamento
+entre a esteira e a margem da tela.; na fila dos porcos, quero q todos os porcos tenham sombra
+projetada, e n somente oq esta na terceira fila na primeira posicao, como mostra na imagem 1.;
+quero os slots tracejado ligeiramente acima, e ligeiramente maiores; o ultimo porquinho da fila
+dos porcos esta com as pernas cortadas, quero q ele esteja totalmente dentro, e mantenha o
+tamanho do porco e proporcao de espacamento.; a area preta q simboliza o redemoinho ou a morte,
+enfim um buraco. quero q o final da esteira recue um pouco para q a area preta forme 1 quadrado
+da espeçura da esteira no fim da esteira. (quero q essa regiao do buraco tenha um espaço bom para
+facil leitura do possivel redemoinho ali futuramente) quero q o porco com o tile caia até o meio
+dessa area.; quero finalizar essa V1 com o basico funcionando bem, faltando agora basicamente
+alinhamento correto e direcao das tile, proporcao e espacamento da esteira, posicao correta do
+texto 5/5 e slots tracejado, e posicao e proporcao correta do das filas dos porcos."
+
+Esta era a terceira tentativa de acertar a direção/orientação da fila de tiles, e desta vez o
+feedback foi explícito com direções cardeais (sul/norte/leste/oeste), então tratei isso como
+prioridade máxima da rodada.
+
+O que foi feito
+----------------
+
+DIREÇÃO DA FILA DE TILES — o item mais importante e mais delicado desta rodada:
+- O pedido tem duas partes tecnicamente separadas: (1) a fileira deve correr na horizontal,
+  oeste->leste, e (2) a face grande de cada tile deve apontar para leste. No código, isso são
+  duas coisas diferentes: a direção em que cada tile é posicionado em relação ao anterior
+  (`stackRowDir`) e a rotação do próprio modelo do tile (que define para que eixo do mundo aponta
+  a normal da face grande).
+- Parte 1 (direção da fileira) ficou fácil: voltei `stackRowDir` para um eixo mundial +X puro
+  (era a direção tangente/diagonal usada no v1m).
+- Parte 2 (face virada para leste) eu cheguei a implementar literalmente: girei o tile em
+  `rotation.z` ao invés do `rotation.x` de sempre, o que de fato aponta a normal da face grande
+  para o eixo mundial X (leste/oeste). Só que ao testar via screenshot, o resultado era um tile
+  invisível/quase invisível — não só "meio de lado", mas praticamente sem área visível nenhuma.
+  Investigando a matemática da câmera (ela tem `position.x = 0` desde sempre, ou seja, ela olha
+  exatamente de frente para o eixo X), uma face cuja normal é exatamente o eixo mundial X fica
+  matematicamente de perfil para essa câmera — área visível zero, não é só um ângulo ruim, é
+  fisicamente de canto.
+  - Tentei corrigir isso inclinando a câmera lateralmente (`camera.position.x` diferente de
+    zero), testando dois valores diferentes via screenshot. Os dois quebraram a cena inteira: a
+    grade de pilares e as fileiras da fila de porcos (que sempre foram organizadas assumindo uma
+    câmera com X=0) ficaram visivelmente tortas, como um losango, porque cada cálculo de posição
+    no resto do código pressupõe essa câmera exata.
+  - Decisão tomada: reverti a câmera para X=0 e mantive a rotação original do tile
+    (`rotation.x`), cuja normal da face fica no eixo mundial Z (sul/norte) — não é literalmente
+    "leste" como pedido, mas é uma face que essa câmera realmente consegue mostrar. A fileira em
+    si roda corretamente na horizontal oeste->leste, como pedido; só a normal da face não é
+    literalmente leste.
+  - Estou sinalizando isso explicitamente: para a normal da face ficar literalmente no eixo
+    leste/oeste E continuar visível, seria necessário uma câmera isométrica de verdade (com
+    componente X), o que por sua vez exige reposicionar TUDO que depende da câmera atual (grade,
+    fila de porcos, HUD 3D) — uma mudança bem mais estrutural do que esse pedido específico
+    justifica sozinho. Se ainda for importante ter a normal literalmente a leste depois de ver
+    este resultado, esse é o próximo passo maior a considerar.
+- BUG REAL redescoberto ao testar a fileira puramente em +X: sem nenhum deslocamento extra em
+  profundidade, os 5 tiles renderizavam como uma única "prancha" sólida, não 5 peças distintas.
+  Isso é um efeito da própria câmera (ângulo bem de cima), não do eixo escolhido: numa vista quase
+  de cima, o que mais se vê da borda de um tile "em pé" é a fatia fina do topo, e 5 fatias finas
+  enfileiradas sem nenhuma variação de profundidade se fundem visualmente em uma barra única.
+  Corrigido reintroduzindo um pequeno deslocamento por tile no eixo Z (`STACK_ROW_DEPTH_STAGGER =
+  0.5`, bem menor que uma diagonal completa) — o suficiente para separar visualmente cada tile
+  (confirmado via screenshot com zoom antes/depois) sem descaracterizar a leitura de "fileira
+  horizontal". Documentei isso no código já que é a segunda vez que esse efeito aparece por
+  motivos ligeiramente diferentes (v1l: eixo da normal igual ao eixo do passo; agora: câmera
+  muito de cima mesmo com eixos perpendiculares).
+
+ESTEIRA 15% MAIOR:
+- `TRACK.margin`, `TRACK.width` e `TRACK.cornerRadius` todos escalados pelo mesmo fator (1.15),
+  preservando a proporção validada no passe anterior (a esteira mais fina/quadrada). Interpretei
+  "esteira 15% maior" como o loop inteiro crescendo, não só a espessura da faixa, já que o pedido
+  também menciona "preencher mais o espaço entre a esteira e a margem da tela" — que é sobre o
+  tamanho total do loop, não só a grossura da faixa.
+- `ORTHO_VIEW_WIDTH` teve sua margem de padding reduzida ainda mais (de 0.4 para 0.25) para
+  preencher um pouco mais o espaço lateral, como pedido.
+
+SOMBRAS DE TODA A FILA DE PORCOS:
+- BUG REAL confirmado na imagem enviada: só um porco da fila tinha sombra visível. A causa era o
+  frustum da câmera de sombra da luz direcional estar centrado na origem (cobrindo
+  aproximadamente a área da grade/esteira), enquanto a fila de porcos fica bem mais ao sul — só um
+  porco caía dentro do frustum por coincidência. Corrigido recentrando o alvo da luz no ponto
+  médio entre a esteira e a fileira mais distante da fila, e alargando o frustum para cobrir as
+  duas áreas. Confirmado via screenshot: todas as 3 fileiras visíveis da fila agora projetam
+  sombra.
+
+SLOTS TRACEJADOS:
+- Movidos um pouco mais para cima (bottom 32% -> 34%) e ligeiramente maiores (17% de largura,
+  antes um pouco menor), como pedido.
+
+ÚLTIMO PORQUINHO COM AS PERNAS CORTADAS:
+- Reconferido via screenshot com zoom em todas as bordas (topo, base, esquerda, direita) da fila
+  de porcos inteira: nenhum porco aparece cortado no build atual. Esse bug já tinha sido corrigido
+  no passe anterior (v1m, ajuste de `QUEUE.areaOffsetZ`) — a imagem enviada neste feedback
+  provavelmente foi tirada de uma versão anterior ao rebuild daquele fix. Não precisei mexer em
+  `pigScale`/`rowSpacing`/`laneSpacing` (o que preserva "tamanho do porco e proporção de
+  espaçamento" como pedido), porque não havia mais nada para corrigir aqui.
+
+BURACO/ÁREA DE MORTE — recuo da esteira:
+- A esteira visível (e o ponto em que o porco "cai") agora termina uma espessura de esteira
+  (`TRACK.width`) antes do fim real do caminho, deixando uma área quadrada vazia do tamanho da
+  própria espessura da esteira — como pedido ("q a area preta forme 1 quadrado da espeçura da
+  esteira"). O ponto de queda do porco+tile foi recalculado para o MEIO desse novo espaço vazio,
+  não mais a borda mais próxima — como pedido ("quero q o porco com o tile caia até o meio dessa
+  area").
+
+FECHAMENTO DA V1:
+- Rodado `npm run build` sem erros e sem warnings novos.
+- Testado o clique real (raycasting) de novo depois de todas as mudanças de layout desta rodada —
+  o pick continua funcionando (confirmado via Playwright: clicar em um porco da fila reduz a
+  capacidade "5/5" -> "4/5" e o porco escolhido aparece corretamente andando com seu tile).
+- Revisão visual completa via screenshot em zoom: fileira de tiles legível como 5 peças distintas,
+  esteira nas novas proporções, todas as sombras da fila presentes, buraco com a nova extensão,
+  nenhum corte em nenhuma borda da tela.
+- Não encontrei nenhuma mecânica faltando além do que já foi listado nos passes anteriores — na
+  minha avaliação a V1 (mecânica crua) está funcionalmente fechada nesta rodada.
+
+Testado via `npm run build` + Playwright (viewport 420x747, a proporção real do #game-frame),
+screenshots com zoom em cada região relevante (fileira de tiles, bordas da fila de porcos, área
+do buraco, topo da grade) e um teste de clique real de ponta a ponta.

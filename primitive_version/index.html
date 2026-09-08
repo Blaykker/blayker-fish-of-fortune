@@ -1,21 +1,119 @@
 <!doctype html>
-<html lang="pt-br">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Primitive Prototype — Fish of Fortune Clone</title>
+    <!-- Rounder/casual display font for in-scene HUD text (ammo, "X/5" tray
+         label) — see config.js FONT and main.js's canvas-drawn stroke
+         outline pass for the "comic border" effect. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
-      #ui {
-        position: fixed; top: 0; left: 0; width: 100%;
-        display: flex; justify-content: center; padding: 16px;
-        font-family: sans-serif; color: #fff; pointer-events: none;
-        font-size: 24px; text-shadow: 0 2px 4px rgba(0,0,0,.6);
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; height: 100%; overflow: hidden;
+        background: #05060c; font-family: 'Segoe UI', Arial, sans-serif;
+      }
+
+      /* ---- Vertical mobile frame: everything lives inside this 9:16 box,
+         letterboxed on wider screens, exactly like a phone portrait view. ---- */
+      #game-frame {
+        position: relative;
+        margin: 0 auto;
+        height: 100vh;
+        max-height: 100vh;
+        width: calc(100vh * 9 / 16);
+        max-width: 100vw;
+        background: #111;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      @media (max-aspect-ratio: 9/16) {
+        #game-frame { width: 100vw; height: calc(100vw * 16 / 9); }
+      }
+
+      #canvas-holder { position: absolute; inset: 0; }
+      canvas { display: block; width: 100% !important; height: 100% !important; }
+
+      /* ---- HUD (flat overlay, per spec: "minimal UI allowed") ----
+         Layout top-to-bottom inside #game-frame: the 3D belt+grid block
+         (via the camera framing in main.js), then the 5 empty placeholder
+         slots, then the picking queue (also 3D, in the scene below this
+         row). There's no more numeric capacity text pill — the physical
+         fiche stack + its floor label (drawn in the 3D scene, see
+         main.js) is the only capacity readout now. */
+
+      /* ---- Placeholder row: 5 slots reserved for a future quick-action
+         item system. They no longer reflect belt state or show a pig
+         thumbnail at all (that was cancelled per feedback, so the player's
+         eye stays on the belt) — just an empty dashed outline for now. ---- */
+      #selected-slots {
+        /* v1s: moved DOWN again — still touching the "X/5" tray label at
+           the previous pass's position (confirmed via the user's own
+           screenshot), made worse by this same pass's camera change (belt
+           pushed down further for top-margin reasons, which also pushes
+           the tray label down toward this fixed CSS-positioned row). Per
+           explicit feedback this time, the target gap is measured from the
+           BOTTOM: this row's own south edge should sit exactly 1/3 of a
+           slot's own height above the queue's front row ("1/3 da sua
+           altura (do slot) quero como distancia da fila dos porcos") —
+           computed via screenshot pixel measurement (queue row0's top edge
+           vs. this row's height at its current 16%-width/aspect-ratio:1
+           size) rather than guessed. That same position also happens to
+           clear the tray label above with a real (if modest) gap, so no
+           further shrinking of the slots themselves was needed this time. */
+        position: absolute; left: 0; right: 0; bottom: 35%; z-index: 10;
+        display: flex; justify-content: center; gap: 3%;
+        padding: 0 6%;
+        /* Purely decorative (no click handling of its own) — without this,
+           its invisible box was sitting directly over the queue's front
+           row and silently swallowing every tap meant for a pig
+           underneath once the row was moved up closer to it. */
+        pointer-events: none;
+      }
+      .slot {
+        /* Reversed back down to 2/3 of the previous pass's size, per
+           feedback ("quero esses slots tracejados menor, quero 2/3 do
+           tamanho q ele esta") — width/max-width both cut from 24%/116px.
+           With smaller slots there's no longer any flex-shrink pressure at
+           this frame width, so gap/padding above could be relaxed back to
+           a comfortable amount instead of the previous pass's bare
+           minimum. */
+        position: relative; width: 16%; max-width: 77px; aspect-ratio: 1;
+        border: 2px dashed rgba(255,255,255,0.25); border-radius: 9px;
+      }
+
+      #win-overlay {
+        position: absolute; inset: 0; display: none;
+        align-items: center; justify-content: center; flex-direction: column;
+        background: rgba(10, 12, 30, 0.85); z-index: 20; color: #fff;
+        text-align: center; padding: 24px;
+      }
+      #win-overlay h1 { font-size: 32px; margin: 0 0 8px; }
+      #win-overlay p { font-size: 14px; opacity: 0.8; margin: 0 0 22px; }
+      #win-overlay button {
+        background: #6cf7ff; border: none; padding: 12px 28px;
+        border-radius: 999px; font-weight: 800; font-size: 15px;
+        cursor: pointer;
       }
     </style>
   </head>
   <body>
-    <div id="ui">Score: <span id="score">0</span></div>
+    <div id="game-frame">
+      <div id="canvas-holder"></div>
+      <div id="selected-slots"></div>
+      <div id="win-overlay">
+        <h1>🏆 Structure destroyed!</h1>
+        <p>Every pillar on the board has been destroyed.</p>
+        <button id="restart-btn">Play again</button>
+      </div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

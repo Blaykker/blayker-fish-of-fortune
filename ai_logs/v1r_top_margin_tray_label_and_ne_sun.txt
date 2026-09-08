@@ -1,0 +1,117 @@
+v1r — Margem superior, texto "5/5" mais próximo da pilha, sol a nordeste
+==========================================================================
+
+Feedback recebido (verbatim, com 2 screenshots quase idênticos anexados mostrando
+o estado atual do jogo — a área dos slots ainda invadindo a área do texto "5/5"):
+
+"a imagem 1 mostra como esta o jogo; a area dos slots ainda esta invadindo a
+area do texto 5/5 , e isso n pode acontecer. 3 duas coisas para resolver isso,
+chegar o texto 5/5 um pouquinho para cima até quase encostar mas ainda com um
+espaçamento do tile q esta na base. a fila de porcos descer um pouco diminuindo
+pela mentade pelo menos o espacamento do ultimo porco até a margem sul. e caso
+ainda n de sem invadir outras areas os slots tracejado , diminuir o tamanho do
+slot para caber entre o texto 5/5 e a area da fila de porcos, o espaçamento sul
+dos slot com o norte da area da fila dos porcos pode sem reduzido enquanto n
+fique sobreposta e invacindo a outra area e mantendo um minimo estetico
+espaçamento; tem q existir algum espaçamento do margem top da tela com o topo
+da esteira. similar aos espaçamentos laterais. ; o espaçamento entre tiles da
+pilha pode ser levemente maior.; a iluminacao globao n esta gerando a sombra
+projetada correta. a quero uma luz fixa gerando uma sombra semi isometrica,
+como se o sol estivesse a 135 gruas (nordeste, canto superior direito),
+gerando uma sombra a sudoeste isometrica é um sol tropical e com força de sol
+de meio dia., verifique e revise esses ponstos q os elementos n estao
+sobrepostos , cada elemento no seu espaço, prioridade com as bargens e
+espaçamento dinamico, tendo um espaçaemento ao redor da esteira, porem com os
+porcos da ultima fila quate chegando perto da margem sul da tela(pra dar a
+ilusao de fila infinita) , quero q mantenha a distribuicao e proporcao ja
+encontrada somente agora acertando a posicao e tamanho dos slots tracejados."
+
+Esta mensagem reportou que a correção do passe anterior (v1q) não resolveu de
+fato a sobreposição entre os slots tracejados e o texto "5/5" num aparelho
+real — pediu para atacar o problema pelo lado do texto/fila desta vez (não dos
+slots de novo), mais uma leva de ajustes finos (margem superior, espaçamento
+da pilha) e a correção da direção da sombra.
+
+O que foi feito
+----------------
+
+SOBREPOSIÇÃO SLOTS x "5/5" — desta vez pelo lado do texto/fila:
+- Em vez de mexer na posição/tamanho dos slots tracejados de novo (que já
+  tinha sido a abordagem no passe anterior e não resolveu de fato num
+  aparelho real), esta mensagem pediu especificamente para mover o TEXTO
+  "5/5" para mais perto da base da pilha de tiles ("chegar o texto 5/5 um
+  pouquinho para cima até quase encostar mas ainda com um espaçamento do tile
+  q esta na base"). O offset do label em relação à âncora da pilha (que
+  ficava a `TILE.width * 1.05` de distância ao sul da base) foi reduzido para
+  `TILE.width * 0.68` — o label agora fica bem mais perto da base da pilha,
+  mantendo uma folga real (não encostado).
+- Junto disso, a fila de porcos foi pedida para descer ("diminuindo pela
+  metade pelo menos o espacamento do ultimo porco até a margem sul") —
+  `QUEUE.areaOffsetZ` aumentado (11.2 → 12.2) para empurrar a fila inteira
+  mais para o sul.
+- E o pedido de margem superior (abaixo) usa o MESMO multiplicador de câmera
+  que desloca a cena inteira para baixo — o que, pela primeira vez nesta
+  série de passes, empurra a fila de porcos na MESMA direção que este pedido
+  já queria (para baixo), em vez de competir com ele como aconteceu nos
+  passes v1p/v1q (onde "esteira mais abaixo" empurrava a fila pra um lado e
+  os slots precisavam ser reajustados pro outro). Isso tornou o ajuste desta
+  vez bem menos frágil — os dois pedidos reforçam um ao outro.
+- Verificado via Playwright nas mesmas 3 proporções de tela do passe anterior
+  (420x747, 390x844, 412x915), com zoom em cada uma na região entre a base da
+  pilha, o texto "5/5" e a primeira fileira de slots: em nenhuma delas há
+  sobreposição real — o texto "5/5" fica visivelmente próximo da pilha (como
+  pedido) mas ainda separado dos slots por uma pequena folga.
+- O pedido também previa, como plano B, diminuir o tamanho dos slots caso a
+  primeira abordagem não bastasse — não foi necessário chegar nesse ponto
+  desta vez, já que mover o texto + a fila resolveu a sobreposição sozinho
+  nas 3 proporções testadas.
+
+MARGEM SUPERIOR (topo da tela até o topo da esteira):
+- **Confirmado como um problema real**: antes deste passe, a esteira/grade
+  praticamente encostava na borda superior da tela, sem nenhuma margem
+  comparável às margens laterais — visível claramente no screenshot anexado.
+- O multiplicador do `camera.lookAt` (que desloca a cena inteira para cima ou
+  para baixo na tela) foi reduzido de 1.2 para 1.15 — o suficiente para abrir
+  uma margem real acima da grade (confirmado via screenshot com zoom no topo
+  da tela) sem reintroduzir os problemas de corte/sobreposição que uma
+  redução mais agressiva desse mesmo valor causou nos passes v1p/v1q. Testado
+  incrementalmente (tentei 1.08 primeiro, que abriu MUITA margem e chegou a
+  cortar a 3ª fileira da fila e reaproximar os slots do "5/5" de novo — voltei
+  para um valor mais moderado, 1.15, que ficou bom nas 3 proporções).
+
+ESPAÇAMENTO ENTRE TILES DA PILHA:
+- `PILE_GAP` aumentado de 0.22 para 0.3 — folga um pouco maior entre cada
+  camada empilhada, per feedback ("o espaçamento entre tiles da pilha pode
+  ser levemente maior").
+
+ILUMINAÇÃO GLOBAL — sol movido para o canto nordeste:
+- Diferente do pedido do passe anterior (que continha uma contradição
+  interna entre a posição do sol pedida e a direção de sombra pedida), desta
+  vez as duas partes do pedido concordam entre si: sol a "135 graus
+  (nordeste, canto superior direito)" projetando uma sombra "a sudoeste" — um
+  sol no canto superior direito da tela fisicamente projeta sombra para o
+  canto inferior esquerdo (o oposto diagonal), que é exatamente sudoeste.
+  Nenhuma contradição para resolver desta vez.
+- `LIGHTING.sunPosition` movido de `{x: -7, y: 9.9, z: -7}` (noroeste, do
+  passe anterior) para `{x: 7, y: 9.9, z: -7}` (nordeste) — usando a mesma
+  convenção já estabelecida no código (direita da tela ~= +X do mundo, topo
+  da tela ~= -Z do mundo), mantendo a mesma magnitude/elevação de 45° pedida
+  ("sombra semi isometrica").
+- Intensidade da luz aumentada (`sunIntensity`: 1.75 → 2.1) e luz ambiente
+  também (`ambientIntensity`: 0.85 → 0.9) para dar a sensação de "sol
+  tropical... com forca de sol de meio dia" pedida — uma cena mais brilhante
+  e com uma sombra mais forte/definida, sem escurecer o resto da cena.
+- Confirmado via screenshot com zoom nas sombras dos porcos da fila: a sombra
+  de cada um se projeta agora para baixo-e-à-esquerda (sudoeste), consistente
+  com o sol no canto superior direito.
+
+Testado via `npm run build` + Playwright nas mesmas 3 proporções de tela
+(420x747, 390x844, 412x915), com inspeção de pixels/zoom via PIL confirmando:
+zero sobreposição entre os slots, o texto "5/5" e a fila de porcos em
+qualquer uma das três; margem superior real e visível acima da grade,
+comparável às margens laterais; última fileira da fila perto da borda
+inferior sem cortar; direção da sombra consistente com a nova posição do
+sol. Também rodado um teste de clique real de ponta a ponta com múltiplas
+seleções em sequência, seguido de um período de espera observando o ciclo
+completo do jogo, sem nenhum erro de JS no console além do bloqueio esperado
+da fonte do Google Fonts (bloqueada de propósito no teste).

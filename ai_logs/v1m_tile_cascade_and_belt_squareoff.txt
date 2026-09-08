@@ -1,0 +1,99 @@
+v1m — Fila de fichas de volta ao "cascata", esteira mais fina/quadrada e fechamento da V1
+==========================================================================================
+
+Feedback recebido (verbatim, resumido para contexto — a mensagem trouxe 4 imagens: imagem 1 =
+estado atual do jogo àquele momento; imagem 2 = como estava antes do update anterior; imagem 3
+= referência de como deveria ficar, com os tiles girados 90° com a face maior virada para a
+esteira, enfileirados um atrás do outro; imagem 4 = mockup no Photoshop com um contorno branco
+mostrando a esteira desejada — mais fina e com cantos bem menos arredondados, anotado como 77px
+de raio de vértice no Photoshop deles):
+
+1. Tiles: girar 90° no próprio eixo para a face maior ficar virada para a esteira, enfileirados
+   um atrás do outro (não mais espalhados lado a lado na horizontal).
+2. Esteira mais fina e com cantos bem menos arredondados (~77px de raio no Photoshop).
+3. "5/5" ainda maior, ao sul e centralizado em relação à fila de tiles.
+4. Todos os porcos da fila devem estar 100% dentro da cena, sem nenhuma parte cortada ou para
+   fora da tela.
+5. A área preta do fim da esteira (buraco) deve ter uma extensão compatível com a grossura da
+   própria esteira.
+6. Pedido geral: revisar o que mais for necessário para fechar essa V1 (só a base/mecânica,
+   antes do passe de estética) e já corrigir e listar qualquer coisa que estiver faltando.
+
+O que foi feito
+----------------
+
+FILA DE FICHAS (tile stack) — a mudança mais importante desta rodada:
+- O passe anterior (v1l) tinha trocado a direção da fileira de tiles para um eixo mundial +X
+  puro, pensando que "alinhados da esquerda para a direita" significava literalmente isso.
+  Comparando a screenshot atual (imagem 1) com a referência (imagem 3), ficou claro que esse
+  resultado tinha um problema real: com a fileira rodando no MESMO eixo em que os tiles já se
+  sobrepõem parcialmente (tipo leque de cartas), cada tile acabava quase 100% escondido atrás
+  do próximo, lendo como uma peça sólida única ao invés de 5 fichas contáveis — mesmo com o
+  pequeno stagger de profundidade que eu tinha adicionado como remendo no v1l.
+- A correção foi voltar a direção da fileira para a TANGENTE do ponto de entrada da esteira
+  (ou seja, "na direção da esteira" mesmo, não um eixo fixo do mundo) — isso é o que a
+  referência desta rodada mostra: uma cascata na diagonal onde a face grande de cada tile fica
+  claramente visível e cada um fica "atrás" do anterior, exatamente como pedido. Removi o
+  remendo do stagger de profundidade (não é mais necessário, a própria direção tangencial já dá
+  a separação visual).
+- Não precisei girar a orientação 3D do próprio modelo do tile (a rotação "em pé", como um
+  livro, continua igual) — o que estava errado era só a DIREÇÃO em que a fileira avançava, não
+  a rotação de cada peça individual.
+- "5/5" ficou maior de novo (2.1x → 2.6x a largura do tile) e recentralizado sob o tile do meio
+  da fileira, usando um deslocamento em Z mundial puro (sul) para não puxar o texto para o lado
+  (a direção radial anterior tinha um componente em X que descentralizava).
+
+ESTEIRA (mais fina, cantos mais quadrados):
+- `TRACK.width` reduzido de 3.6 para 2.6.
+- `TRACK.cornerRadius` reduzido de 4.2 para 2.6 — bem mais quadrado que antes.
+- Não dá para converter o "77px no Photoshop" deles para unidades do meu mundo 3D sem saber a
+  resolução/zoom exato do canvas deles, então usei julgamento visual + uma verificação mais
+  rigorosa: redimensionei a imagem de referência para a MESMA resolução da minha própria
+  screenshot (ambas vieram do mesmo formato de tela 9:16) e medi a espessura da faixa da
+  esteira em pixels nos dois, na mesma escala — a espessura do meu resultado final ficou bem
+  próxima da referência (por volta de 30-40px em ambos, na mesma escala), o que me dá confiança
+  de que o valor está correto e não é só uma aproximação visual "no olho".
+
+BUG REAL ENCONTRADO E CORRIGIDO — grade cortada no topo:
+- Ao aplicar a esteira mais fina, a câmera ortográfica automaticamente dá mais zoom em tudo
+  (menos espaço "vazio" para caber na mesma largura de tela). Combinado com o valor de
+  `camera.lookAt` herdado do passe anterior (1.45x, calibrado para a esteira mais grossa de
+  antes), isso jogou a primeira fileira de pilares para FORA do topo da tela — um corte real,
+  não só uma margem apertada. Confirmado via screenshot. Corrigido reduzindo o multiplicador do
+  `lookAt` para 1.2x, e reajustando `QUEUE.areaOffsetZ` (de 16 para 12.4) porque essa mudança de
+  câmera desloca a cena inteira verticalmente, incluindo a fila.
+
+BUG REAL ENCONTRADO E CORRIGIDO — porcos da fila cortados nas bordas:
+- Depois do ajuste acima, testei especificamente as bordas esquerda/direita e a fileira 2 (a
+  mais ao sul) com screenshots recortados nos extremos da tela. A fileira 2 estava sendo cortada
+  na base pela borda inferior do frame — corrigido reduzindo `areaOffsetZ` até a fileira 2 caber
+  inteira com uma margem visível. Bordas esquerda/direita já estavam OK (confirmado, sem corte).
+
+BURACO (área de destruição):
+- `DEATH_ZONE.sizeMultiplier` deixou de ser relativo a `TILE.width/depth` e passou a ser
+  relativo a `TRACK.width` — exatamente o que foi pedido ("extensão compatível com a grossura da
+  esteira"). Valor ajustado (1.2x) para o buraco ficar um pouco mais generoso que a largura crua
+  da esteira, mantendo a legibilidade pedida em passes anteriores, mas sem inflar
+  independentemente do tamanho da esteira como antes.
+
+REVISÃO GERAL PARA FECHAR A V1 (mecânica base, antes do passe de estética):
+- Conferido o fluxo completo de vitória/reinício (`onPillarDestroyed` → `showWin` →
+  `resetGame`): todos os pilares destruídos mostra a tela de vitória, o botão "Play again" limpa
+  a grade, os porcos ativos, os tokens da esteira e reconstrói a fila do zero — sem
+  vazamento de memória visível (todo mundo que cria uma textura/canvas tem um `dispose()`
+  correspondente sendo chamado).
+- Testado o clique real de novo (não só inspeção visual) após todas as mudanças de layout desta
+  rodada — o pick continua funcionando normalmente com a nova posição/tamanho da fila.
+- Rodado `npm run build` sem erros e sem novos warnings além do aviso de tamanho de bundle já
+  existente (não relacionado a esta mudança).
+- Não encontrei nenhuma mecânica faltando da lista do documento do desafio (grade, esteira,
+  fila com seleção por clique, munição por porco, regra de linha de visão/arqueiro, captura de
+  capacidade via fichas físicas, condição de vitória com tela de reinício) — a V1 (mecânica
+  crua, sem estética) está, na minha avaliação, funcionalmente completa e pronta para começar o
+  passe de "feel" (v2) e depois o de estética (reskin Fish of Fortune). Se algo específico do
+  vídeo de referência ainda estiver faltando, vale apontar explicitamente porque não achei
+  nenhuma lacuna óbvia relendo o documento do desafio + o código atual.
+
+Testado via `npm run build` + Playwright (viewport 420x747, a proporção real do #game-frame) +
+comparação de pixels em escala normalizada contra a imagem de referência do Photoshop, além do
+teste de clique real de sempre.

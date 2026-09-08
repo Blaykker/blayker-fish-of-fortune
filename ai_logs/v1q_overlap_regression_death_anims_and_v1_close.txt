@@ -1,0 +1,190 @@
+v1q — Correção de sobreposição, animações de morte e fechamento da V1
+======================================================================
+
+Feedback recebido (verbatim, com 2 screenshots quase idênticos anexados mostrando
+o estado atual do jogo):
+
+"vc concertou algumas coisas porem quebrou outras, imagem 1 mostra como o jogo
+esta agora; o slot tracejado esta literalmente em cima do texto 5/5 dos tiles e
+de parte da esteira. , isso aconteceu pq vc subiu a fila dos porcos para cima,
+eles ja estavam em uma posicao boa, com esse espaçamento e com o ultimo porco da
+fila com um pequeno espacamento da margem sul da tela. em resumo n quero nenhum
+elemento(bloco de elemento) sobre o outro e invadindo o espaço do outro. ; quero
+a esteira ganhando mais espaço nas orizontal, mantendo a mesma espeçura de pista
+de esteira . quero liberar um pouco de espaço para q nenhum pilar da estrutura
+em xadrez esteja tocando ou em cima da esteira. ; caso um porco morra na esteira
+(acabe sua municao) ele gira até desaparecer em um movimento elastico, e o tile
+volta para posicao inicial indo para o topo da pilha , ao selecionar um porco na
+fila de porcos o tile q ele ficara em cima sera o ultimo da pilha disponivel , ao
+morrer ao cair no buraco o porco caia girando. e quero q o tempo de colocar
+porcos enquanto tem tile para isso quero q seja menor , porem respeitando de um
+tile n ficar sobre o outro, podendo ter um minimo espaçamento entre tiles. ; a
+iluminacao global quero q esteja em uma posicao q gere uma sombra projetada para
+o canto inferior esquerdo, ou seja q o sol esteja no canto superior esquerdo;
+sobre as setas serem chatas, quero dizer q sao chatas na horizontal , com a
+ponta mais proxima da base, e com a vertical mais esticada , e com cerca de 40 a
+70% de opacidade e se movendo mais suavimente; acertando essas coisas de fato ,
+nada do layout estar invadindo o espaço dos elementos , proporcoes e posicoes
+alinhadas , posicao e margem aplicada(nada sendo recortado) creio q estara
+fechado , monte o summary e description para colocar no push do github desktop
+para salvar essa versao como V1 e amanha ja partimos para aplicacao da estetica"
+
+Esta mensagem trouxe uma regressão real reportada num aparelho de verdade, mais
+uma leva de pedidos novos (animações de morte, ritmo de colocação, luz, setas) e
+um pedido de fechamento formal da V1. Documentando cada ponto.
+
+O que foi feito
+----------------
+
+REGRESSÃO DE SOBREPOSIÇÃO (slots x "5/5" x esteira) — causa raiz e correção:
+- No passe anterior (v1p), o multiplicador do `camera.lookAt` foi reduzido
+  (1.2 → 1.0) para empurrar todo o bloco esteira+grade mais para baixo na tela
+  ("quero toda a area da esteira mais abaixo"). Isso desloca a cena 3D inteira,
+  incluindo a fila de porcos, então `QUEUE.areaOffsetZ` teve que ser reduzido
+  junto (11.2 → 7.6) para a 3ª fileira não cortar na borda inferior — e por
+  cima disso os slots tracejados (posicionados via CSS, fora do sistema 3D)
+  tiveram que subir (`bottom: 37% → 41%`) para não encostar na 1ª fileira da
+  fila. Cada ajuste individual passou na minha própria verificação via
+  Playwright, mas SÓ num viewport (420x747) — e o conjunto final, medido nesse
+  viewport específico, ficou bom o bastante para passar, mas aparentemente
+  frágil demais para se manter bom num aparelho real com proporção de tela
+  diferente. O resultado reportado pelo usuário: os slots tracejados
+  literalmente em cima do texto "5/5" e de parte da esteira.
+- O usuário foi explícito: a fila de porcos "ja estava em uma posicao boa" antes
+  desse empurrão, com um espaçamento e margem que já funcionavam. Em vez de
+  tentar reajustar tudo de novo para a frente (arriscando cair no mesmo
+  problema noutro lugar), revertido o PAR inteiro de valores acoplados —
+  `camera.lookAt` multiplicador (main.js, de volta a 1.2) e
+  `QUEUE.areaOffsetZ` (config.js, de volta a 11.2) — para a última combinação
+  já validada como boa em passes anteriores (v1n/v1o). Isso significa abrir
+  mão do "esteira mais abaixo" do passe anterior: como os dois pedidos
+  ("esteira mais abaixo" e "nenhum elemento sobreposto a outro") entraram em
+  conflito direto neste tamanho de frame, priorizei o segundo — mais explícito
+  e mais repetido nesta mensagem ("em resumo n quero nenhum elemento(bloco de
+  elemento) sobre o outro e invadindo o espaço do outro").
+- Desta vez a verificação foi feita em 3 proporções de tela diferentes
+  (420x747, 390x844, 412x915, via Playwright) em vez de uma só, e confirmada
+  com screenshot + inspeção visual em cada uma: sem sobreposição entre os
+  slots, o texto "5/5" e a fila de porcos em nenhuma delas.
+
+ESTEIRA GANHANDO ESPAÇO HORIZONTAL + PILARES NÃO TOCANDO A ESTEIRA:
+- **Bug real encontrado**: `TRACK.marginX` (distância da linha central da
+  esteira até a borda do tabuleiro, no eixo leste/oeste) estava em 1.0,
+  enquanto a própria largura da esteira (`TRACK.width`) é 3.0 — ou seja, a
+  meia-largura da faixa da esteira (1.5) já era MAIOR que essa margem, o que
+  significa que a borda interna da esteira geometricamente invadia 0.5
+  unidades dentro do próprio tabuleiro. Na prática, isso fazia a faixa da
+  esteira se sobrepor visualmente aos pilares do canto mais próximo dela —
+  exatamente o que foi reportado ("quero liberar um pouco de espaço para q
+  nenhum pilar da estrutura em xadrez esteja tocando ou em cima da esteira").
+- Corrigido aumentando `TRACK.marginX` para 1.9 — folga confortável acima da
+  meia-largura da própria esteira. Isso, ao mesmo tempo, satisfaz o pedido de
+  "esteira ganhando mais espaço nas horizontal", já que o loop da esteira
+  (margem) cresceu — sem tocar em `TRACK.width` (a espessura da pista em si,
+  que o pedido pediu explicitamente para manter igual).
+- Confirmado via screenshot com zoom no canto: há agora um vão limpo entre a
+  faixa da esteira e a fileira de pilares mais próxima, em nenhum ponto do
+  contorno.
+
+ANIMAÇÕES DE MORTE:
+- Morte no meio da esteira por falta de munição: antes, o código simplesmente
+  chamava `pig.dispose()` no mesmo frame em que a última munição era disparada
+  — nenhuma animação, o porco só sumia. Convertido para uma nova fase animada
+  (`phase: 'despawning'`), no mesmo padrão da fase `'falling'` já existente
+  (queda no buraco): o porco gira continuamente enquanto encolhe até
+  desaparecer, com um efeito elástico (uma oscilação de escala que "quica"
+  algumas vezes antes de sumir de vez, decaindo com o tempo) em vez de um
+  encolhimento reto — per feedback ("ele gira até desaparecer em um movimento
+  elastico"). O tile, junto disso, volta lerpando de volta para o próximo
+  slot livre no topo da pilha (o mesmo alvo que a fase de queda no buraco já
+  usa) — per feedback ("o tile volta para posicao inicial indo para o topo da
+  pilha").
+- Queda no buraco no fim da esteira: já afundava/encolhia/sumia, mas sem
+  nenhuma rotação. Adicionado um giro contínuo (`rotation.y`) durante toda a
+  animação de queda, per feedback ("ao morrer ao cair no buraco o porco caia
+  girando").
+- Verificado (sem necessidade de mudança de código): o tile que um porco
+  recém-selecionado vai ocupar já é, por construção, o último/topo da pilha
+  disponível (`stackTopWorldPosition()` já usa exatamente essa lógica desde
+  passes anteriores) — o pedido "ao selecionar um porco na fila de porcos o
+  tile q ele ficara em cima sera o ultimo da pilha disponivel" já estava
+  correto, só não tinha sido confirmado explicitamente antes.
+
+RITMO DE COLOCAÇÃO x ESPAÇAMENTO MÍNIMO ENTRE TILES:
+- **Bug latente encontrado**: `PIG.minBeltGap` (distância mínima mantida entre
+  dois porcos na esteira) estava em 1.6, mas `TILE.depth` (o comprimento do
+  tile na direção do percurso) cresceu para 2.6 ao longo dos passes v1o/v1p —
+  ou seja, dois tiles no espaçamento mínimo antigo já podiam fisicamente se
+  sobrepor um pouco na esteira, uma inconsistência que não tinha sido pega
+  antes porque não foi reportada visualmente ainda.
+- Corrigido aumentando `PIG.minBeltGap` para 2.9 (folga real acima da
+  profundidade do tile). Isso sozinho tornaria a colocação mais lenta (mais
+  distância a percorrer antes de liberar espaço para o próximo) — o oposto do
+  pedido ("quero q o tempo de colocar porcos... seja menor"). Compensado
+  reduzindo `TILE.enterDuration` (0.28 → 0.18, entrada mais rápida na esteira)
+  e aumentando `PIG.speed` (8.5 → 10.5, esteira mais veloz), então o ritmo
+  GERAL de colocação continua parecendo mais rápido apesar do espaçamento
+  mínimo maior — exatamente o trade-off pedido ("porem respeitando de um tile
+  n ficar sobre o outro, podendo ter um minimo espaçamento entre tiles").
+
+ILUMINAÇÃO GLOBAL:
+- Pedido continha duas cláusulas que, ao pé da letra, se contradizem
+  fisicamente: "quero q gere uma sombra projetada para o canto inferior
+  esquerdo" (sombra no canto inferior esquerdo) e, na mesma frase, "ou seja q
+  o sol esteja no canto superior esquerdo" (sol no canto superior esquerdo).
+  Um sol no canto superior ESQUERDO da tela projeta sombra para o canto
+  inferior DIREITO (o oposto diagonal), não o inferior esquerdo — usando a
+  mesma convenção já estabelecida no código (direita da tela ~= +X do mundo,
+  parte de baixo da tela ~= +Z do mundo), a mesma usada quando o sol foi
+  originalmente posicionado a sudeste.
+- Decisão tomada: segui a cláusula mais específica e inequívoca — a posição
+  explícita do sol ("sol no canto superior esquerdo") — em vez de tentar
+  adivinhar qual das duas frases era a intenção real. `LIGHTING.sunPosition`
+  invertido de `{x: 7, y: 9.9, z: 7}` (sudeste) para `{x: -7, y: 9.9, z: -7}`
+  (noroeste), mantendo a mesma elevação/intensidade — só espelhado. Confirmado
+  via screenshot com zoom nas sombras dos porcos da fila: a sombra de cada um
+  agora se projeta para baixo-e-à-direita, consistente com o sol estando a
+  noroeste (fisicamente correto para essa posição do sol, mesmo que
+  tecnicamente não seja "canto inferior esquerdo" como a outra cláusula da
+  frase também pedia). Sinalizando essa contradição explicitamente aqui em
+  vez de simplesmente escolher uma leitura sem avisar.
+
+SETAS DA ESTEIRA — forma revertida:
+- No passe anterior (v1p), "chatas" foi lido como uma silhueta larga e baixa
+  (span ponta-a-cauda maior, meia-altura menor). Este feedback esclareceu que
+  o pedido era o oposto: "chatas na horizontal, com a ponta mais proxima da
+  base" (span ponta-a-cauda MENOR) "e com a vertical mais esticada" (meia-
+  altura MAIOR). Revertido: `ARROW_TIP_X`/`ARROW_TAIL_X` aproximados um do
+  outro (span bem menor) e `ARROW_HALF_HEIGHT` aumentado — agora a seta é
+  curta na horizontal e alongada na vertical, o oposto exato da forma
+  anterior.
+- Opacidade: já estava em 0.55, dentro da faixa pedida (40-70%) — mantida sem
+  alteração.
+- Velocidade: `TRACK.arrowSpeed` reduzido de 4.2 para 3.2 para um movimento
+  mais suave, per feedback ("se movendo mais suavimente") — a lógica de
+  fade/wipe em si (rampa `smoothstep`, corrigida no passe anterior) não
+  precisou de nenhuma mudança estrutural, só a velocidade de varredura.
+
+Testado via `npm run build` + Playwright em 3 proporções de tela diferentes
+(420x747, 390x844, 412x915), com inspeção de pixels via PIL confirmando: zero
+sobreposição entre os slots tracejados, o texto "5/5" e a fila de porcos, em
+qualquer uma das três proporções; zero sobreposição entre a esteira e os
+pilares mais próximos (confirmado via zoom no canto); direção da sombra
+consistente com a posição do sol escolhida. Também rodado um teste de clique
+real de ponta a ponta com múltiplas seleções em sequência (4-5 porcos
+escolhidos, um logo após o outro) para confirmar que a colocação mais rápida
+não introduz sobreposição de tiles na esteira, seguido de um período de espera
+observando o ciclo completo (disparo, munição zerando, movimento pela esteira)
+sem nenhum erro de JS no console além do bloqueio esperado da fonte do Google
+Fonts (bloqueada de propósito no teste).
+
+V1 — considerada fechada
+-------------------------
+Com a regressão de sobreposição corrigida (e revalidada em múltiplas
+proporções de tela desta vez, não só uma), o bug real da esteira encostando
+nos pilares corrigido, as animações de morte implementadas, o ritmo de
+colocação ajustado sem introduzir sobreposição de tiles, a iluminação e as
+setas revisadas conforme o pedido mais recente — a V1 (primitive_version,
+mecânica crua) é considerada funcionalmente fechada a partir deste ponto. O
+próximo passe (v2/aesthetic) parte para a aplicação da estética Fish of
+Fortune sobre esta base mecânica.

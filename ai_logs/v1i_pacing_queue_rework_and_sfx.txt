@@ -1,0 +1,264 @@
+[SESSION] Belt-corner geometry rewrite, queue-gap bugfix, room-gated
+picking, uniform wood tiles, HUD simplification, placeholder SFX, faster
+pacing
+[DATA] 2026-09-07
+
+CONTEXTO:
+O usuário anexou 3 imagens: (1) uma referência de layout/proporção que
+quer que o jogo se aproxime (esteira com aparência de "duas faixas",
+tabuleiro ocupando mais espaço, números de munição mais abaixo no corpo
+do porco, indicador "4/5" no canto), (2) um screenshot do estado atual
+(a versão v1h que acabara de ser entregue) para comparação direta do raio
+de canto da esteira, e (3) outra referência de layout mostrando a
+esteira/tabuleiro/fila com as proporções e o texto "5/5" como ele queria.
+O texto trouxe uma leva grande e variada de correções.
+
+PEDIDOS (lista):
+1. Mesma proporção/disposição de elementos da imagem 1.
+2. Esteira: não queria o ângulo do canto tão suave quanto ficou (v1h);
+   queria só a borda sem serrilhado, mas com o MESMO raio de canto de
+   antes (ou comparável ao da imagem 1 vs. a imagem 2, que é o estado
+   atual).
+3. Filas da fila de seleção mais espaçadas; porcos da fila 2x maiores
+   (correção do 5x da rodada anterior, que ficou grande demais).
+4. Número de tiros sobre cada porco mais abaixo — na parte plana do
+   corpo, logo abaixo das orelhas — valendo tanto pra fila quanto pra
+   esteira.
+5. Tiles sempre iguais, sem diferenciar porco branco/preto (serão de
+   madeira no futuro, todos iguais).
+6. Indicador "5/5": do tamanho máximo horizontal do tile, no CHÃO, logo
+   abaixo da base da ficha mais baixa da pilha — como na imagem 3.
+7. Remover completamente o texto "0/5 on belt" — só o indicador de
+   quantidade de fichas (item 6) deve existir, com tamanho/proporção
+   baseados na imagem 3.
+8. Não deixar um tile entrar sobre o outro na esteira — só permitir clicar
+   num porco da fila quando houver espaço físico pra colocar o próximo
+   tile.
+9. Bug relatado: a fila ficava com "gaps" fixos (posições vazias que não
+   se resolviam), relacionado ao mecanismo de porco pulando pra esteira +
+   fila andando. Sugestão do próprio usuário: gerar 4 porcos por fila (em
+   vez de 3), com o 4º sempre processado mas fora da tela, entrando em
+   cena só quando abrir uma vaga — reforça a ilusão de fila infinita
+   mostrando só os 3 primeiros de cada fila.
+10. Cancelar (por hora) a exibição do porco escolhido nos slots de "porco
+    selecionado" — esses slots serão usados no futuro pra itens de ação
+    rápida, e mostrar o porco ali competia com a atenção na esteira.
+11. Sons de ação simples (placeholder) para: clicar num porco, ficha
+    entrando na esteira, porco pousando na ficha, porco atirando, tiro
+    acertando um bloco, pilar sendo destruído, porco sumindo (sem
+    munição), porco caindo no buraco no fim da esteira.
+12. Pediu pra eu analisar o vídeo de referência pra entender o timing —
+    esteira e tiro bem mais rápidos, movimento mais orgânico.
+13. Tiro bem maior, com o rastro do tamanho máximo do próprio projétil,
+    afinando como uma cauda.
+14. Bounce ao acertar um pilar + animação de destruição (não sumir
+    instantaneamente); tabuleiro com o maior espaço/tamanho possível que
+    a folga entre esteira e layout permitir, leitura mais nítida possível
+    dos blocos.
+15. Atualizar o prompt de reskin (`ai_logs/reskin_brainstorm_prompt.txt`)
+    pra refletir as mudanças desta rodada.
+
+NOTA IMPORTANTE SOBRE O PEDIDO 12:
+Não tenho acesso ao arquivo de vídeo de referência original nesta sessão
+(só às imagens anexadas nesta e nas mensagens anteriores) — não consegui
+"assistir de novo" o clipe pra extrair o timing exato. Apliquei um
+aumento grande e deliberado de velocidade/cadência (esteira, tiro,
+disparo) com base na descrição textual ("bem mais rápida"), documentado
+abaixo, mas isso é uma estimativa, não uma medição direta do vídeo — vale
+comparar lado a lado com o clipe original e ajustar os números finos se
+ainda não bater.
+
+MUDANÇAS DE CÓDIGO:
+- config.js:
+  - `PIG.speed`/`TRACK.arrowSpeed`: 1.8 -> 4.5 (mantidos iguais entre si,
+    como já era regra desde o v1h); `PIG.fireIntervalBase`: 170 -> 90,
+    `fireIntervalJitter`: 90 -> 50 (cadência de tiro bem mais rápida);
+    `PIG.projectileSpeed`: 16 -> 30.
+  - `PIG.projectileRadius`: 0.13 -> 0.42 (tiro bem maior);
+    `projectileTrailLength`: 0.65 -> 1.1; a base do rastro agora usa
+    EXATAMENTE `projectileRadius` (era 0.85x) — ver main.js.
+  - `PIG.ammoLabelHeight` (novo, 0.62): posição Y local do sprite de
+    munição no modelo do porco — desceu de um valor implícito de 1.05
+    pra ficar na parte plana das costas, abaixo das orelhas; usado tanto
+    pelos porcos da fila quanto (reaproveitando o mesmo sprite) pelos da
+    esteira.
+  - `QUEUE`: `rows` agora é o TOTAL por fila (4, incluindo um porco
+    sempre construído mas escondido fora da tela) e `visibleRows` (novo,
+    3) é quanto efetivamente aparece; `pigScale`: 5 -> 2;
+    `laneSpacing`: 3.4 -> 3.0 só pra manter proporção com o porco menor,
+    mas com folga extra percebida por conta do prório porco ser menor;
+    `hiddenRowExtraOffset` (novo) garante que a 4ª fileira fique bem fora
+    do quadro (precisei de duas rodadas — 6, depois 16 — a primeira ainda
+    deixava a fileira escondida vazando na borda inferior da tela).
+    Removidos `offscreenSpawnOffset`/`enterDuration`/
+    `spawnDelayAfterShift` (o novo mecanismo, ver main.js, não precisa
+    mais deles).
+  - `TRACK.margin`: 3.2 -> 2.6 e `TRACK.width`: 4.2 -> 3.8 (mais espaço
+    pro tabuleiro, esteira um pouco mais estreita mas ainda cabe a ficha
+    grande); `TRACK.cornerRadius`: 4.5 -> 2.6 (canto bem mais compacto,
+    ver explicação técnica abaixo).
+  - `TILE`: removidas `colorWhite`/`colorBlack`/`colorEmpty`, agora um
+    único `color` (tom neutro de madeira) usado em TODO lugar (pilha E
+    esteira), independente da cor do porco montado.
+  - `TRAY`: trocado `labelOffsetY` por `widthMatchesTile` (documentando a
+    nova regra de tamanho — o texto "X/5" agora é dimensionado a partir
+    da própria largura do tile, calculado em main.js).
+  - `SELECTED_SLOTS`: removido `displayScale` (não há mais nada
+    renderizado ali).
+  - Novo bloco `SOUND` (`enabled`, `masterVolume`) controlando o módulo
+    de som novo.
+- NOVO ARQUIVO `sound.js`: um punhado de funções (`sfx.click`,
+  `tileEnter`, `pigLand`, `shoot`, `hit`, `pillarDestroy`, `pigDespawn`,
+  `pigFall`) que geram blipes curtos via Web Audio API (osciladores com
+  envelope + um estouro de ruído filtrado pros impactos) — deixei claro
+  no comentário do topo que são só placeholders, não áudio final.
+- main.js:
+  - BUG DO CANTO DA ESTEIRA (raiz real, não só "raio errado"): o método
+    antigo desenhava a esteira como uma sequência de caixas retas
+    (`BoxGeometry`) rotacionadas pra seguir a tangente em cada ponto
+    amostrado — isso é exato num trecho reto, mas numa CURVA, caixas
+    retas vizinhas (cada uma com a largura total da esteira) se
+    sobrepõem na parte de dentro da curva sempre que o raio do canto for
+    pequeno frente à largura da esteira — e essa sobreposição gerava o
+    "leque" de linhas (z-fighting) que o usuário reportou, tanto na
+    primeira aparição (esteira mais grossa, raio pequeno) quanto de novo
+    depois de eu simplesmente diminuir o raio (2.3) sem resolver a causa
+    raiz. Reescrevi `buildTrackVisual()` do zero: agora é um único mesh
+    "loft" — amostro a curva real (`pointAtDistance`/`tangentAtDistance`)
+    em intervalos finos e construo uma faixa extrudada (topo, base,
+    parede interna, parede externa, tampas nas pontas) ponto a ponto.
+    Isso é geometricamente exato em QUALQUER raio de canto — não existe
+    mais um raio mínimo "seguro" pra brigar com a largura da esteira, o
+    que também significa que agora dá pra escolher o raio só pelo visual
+    (voltei pra 2.6, bem mais compacto que o 4.5 anterior) sem medo de
+    reintroduzir o defeito. Confirmei visualmente (screenshot antes/
+    depois) que o canto ficou limpo, sem nenhum traço do leque.
+  - Munição sempre pousa mais abaixo no corpo agora (`PIG.ammoLabelHeight`
+    usado no lugar do valor fixo antigo) — mesmo sprite reaproveitado
+    entre fila e esteira, então a mudança vale nos dois contextos.
+  - `buildFicheStack`/`spawnRig`: um único material (`TILE.color`) pra
+    TODOS os tiles, independente da cor do porco — removida toda lógica
+    de escolher cor do tile por time.
+  - `trayLabel`: reposicionado pra ficar rente ao chão
+    (`stackAnchor + (0, 0.03, 0)`) em vez de "logo abaixo da base" via
+    deslocamento negativo, e redimensionado pra `TILE.width` de largura
+    (mantendo a proporção 2.5:1 do canvas) — cobre a largura máxima do
+    tile, como pedido.
+  - Pilares agora têm uma animação de destruição real em vez de sumir
+    instantaneamente: `destroyPillar` marca `alive = false` na hora (a
+    lógica de mira para de considerá-lo imediatamente) mas só agenda a
+    remoção visual; um novo `tickPillarDestructions(dt)` anima cada
+    pilar "destruindo" com um pulo rápido pra cima (bounce) seguido de um
+    afundamento + encolhimento + leve tombo acelerando, terminando por
+    esconder a instância (`HIDDEN_MATRIX`) só no fim da animação
+    (~0.34s).
+  - Projétil: raio maior (`PROJECTILE_GEO`/`TRAIL_GEO` recriados a partir
+    do novo `PIG.projectileRadius`), e o cone do rastro agora nasce com
+    o MESMO raio da esfera na base (era 0.85x) — lê como uma extensão
+    contínua do próprio tiro.
+  - Sons plugados nos pontos certos: `sfx.click()` só quando um pick é
+    de fato aceito (depois do gate de espaço, ver abaixo); `sfx.tileEnter()`
+    no início de `spawnRig`; `sfx.pigLand()` quando a animação de entrada
+    termina e o porco "pousa" de vez na ficha; `sfx.shoot()` a cada
+    disparo; `sfx.hit()`/`sfx.pillarDestroy()` no impacto do projétil
+    (`tickProjectiles`); `sfx.pigFall()` vs. `sfx.pigDespawn()`
+    diferenciados via um novo `pig.endReason` ('fall' ao alcançar o fim
+    da esteira / 'despawn' ao ficar sem munição no meio do percurso),
+    tocado no loop principal no momento em que o rig é de fato
+    descartado.
+  - Nova `hasRoomForNewFiche()`: além de checar se há um token de
+    capacidade livre, agora também verifica se NENHUM rig está em
+    `phase === 'entering'` (uma ficha ainda entrando) e se o rig mais
+    próximo da entrada já andou pelo menos `PIG.minBeltGap` além do
+    `GREEN_ZONE_DIST` — só then um pick é aceito. `onPick` e o handler de
+    clique passaram a usar essa checagem em vez de só olhar a contagem
+    numérica de capacidade — nenhum tile mais entra sobre o outro.
+  - Fila reescrita pra corrigir o bug dos "gaps fixos": em vez de criar o
+    porco novo sob um temporizador (`pendingQueueSpawns`, que tinha uma
+    janela onde o array da fila e o que estava de fato na cena podiam
+    dessincronizar), cada fila agora SEMPRE mantém `QUEUE.rows` (4)
+    porcos reais — os 3 primeiros (`QUEUE.visibleRows`) visíveis, o 4º
+    sempre já construído mas posicionado bem ao sul, fora do quadro
+    (`queueSlotPosition` soma `QUEUE.hiddenRowExtraOffset` pra qualquer
+    `rowIndex >= visibleRows`). Ao escolher um porco, TODAS as posições
+    atrás dele (incluindo a 4ª/escondida) deslizam uma casa pra frente —
+    a que estava escondida entrando em quadro é exatamente o efeito de
+    "novo porco vindo de fora da tela" pedido — e um porco novo é
+    construído IMEDIATAMENTE na posição escondida que sobrou (sem
+    delay/timer, já que está fora da tela mesmo). Removidas
+    `pendingQueueSpawns`/`spawnQueuePigFromOffscreen`.
+  - Removido por completo o preenchimento visual dos "slots
+    selecionados": apaguei `hudScene`/`hudCamera`/`hudCardGeo`/
+    `hudDisplayWhite`/`hudDisplayBlack`/`updateSelectedSlotsDom`/
+    `renderSelectedSlotThumbnails` e a chamada correspondente no loop de
+    render — `buildSelectedSlots()` agora só cria os 5 `<div class="slot">`
+    vazios (tracejados), sem nenhuma lógica de conteúdo. O bookkeeping
+    de munição/capacidade (`beltTokens`) continua existindo internamente
+    (usado pelo jogo), só não é mais desenhado ali.
+  - Removida a pílula numérica de capacidade: `capacityPill` e toda
+    referência a ela saíram de `updateCapacityHud` (que agora só chama
+    `updateTrayLabel`/`updateFicheStack`).
+- index.html: removida a div/CSS `#capacity-pill`; `#selected-slots`
+  simplificado pra só descrever o visual de placeholder (sem mais
+  `.slot.filled`, já que não há mais estado pra refletir ali).
+- ai_logs/reskin_brainstorm_prompt.txt: atualizado pra refletir os tiles
+  uniformes (sem variante por time), o indicador "X/5" no chão do
+  tamanho do tile (sem mais pílula de texto solta), o número de munição
+  mais abaixo no corpo do porco, o cancelamento do porco nos slots
+  selecionados (viraram um item genérico "12. SONS" também adicionado à
+  lista), e a nova cadência mais rápida da esteira/setas.
+
+AJUSTE EMPÍRICO (build -> screenshot -> ajustar):
+- A 4ª fileira "escondida" da fila vazou pra dentro do quadro na primeira
+  tentativa (`hiddenRowExtraOffset = 6`) — aumentei pra 16 depois de
+  confirmar visualmente que ainda aparecia uma fileira parcial no rodapé.
+- O raio do canto da esteira passou por uma investigação mais funda do
+  que um simples ajuste de número: primeiro tentei só diminuir o raio
+  (4.5 -> 2.3) mantendo o método antigo de caixas retas, e o defeito de
+  "leque" reapareceu igual — foi aí que percebi que o problema nunca foi
+  "o raio errado", e sim o MÉTODO de construção da esteira sendo
+  inerentemente aproximado nas curvas. Reescrevi pra um mesh único que
+  segue a curva de verdade (loft), e só DEPOIS disso escolhi o raio final
+  (2.6) puramente por estética, confirmando com screenshot que o defeito
+  não existe mais em nenhum raio.
+
+TESTE:
+- npm install + npm run build: sucesso (mesmo aviso padrão de chunk size).
+- Playwright (420x860), múltiplas rodadas:
+  - Sem erros de console/página em nenhum teste (picks isolados, picks em
+    grade ao redor de um alvo pra diagnosticar um miss de coordenada de
+    teste — não um bug do jogo —, 6 picks seguidos na MESMA fila
+    aguardando espaço entre eles).
+  - Canto da esteira confirmado limpo via zoom (sem nenhum traço do
+    "leque" antigo), nitidamente mais compacto que a versão anterior.
+  - A 4ª fileira escondida da fila não aparece mais na borda da tela.
+  - `hasRoomForNewFiche()` confirmado impedindo picks quando não há
+    espaço (uma sequência de 6 cliques rápidos só resultou em 1 porco na
+    esteira até haver espaço de verdade) e liberando picks normalmente
+    assim que o porco da frente se afasta o suficiente da entrada.
+  - 6 picks seguidos na mesma fila, aguardando espaço entre eles,
+    terminou com a fila daquela coluna totalmente preenchida (3
+    visíveis, nenhuma lacuna) — o bug de "gaps fixos" não se reproduziu.
+  - Número de munição visivelmente mais abaixo no corpo do porco (fila e
+    esteira) em todos os screenshots.
+  - Tiles uniformes (mesma cor de madeira) na pilha e na esteira,
+    independente da cor do porco montado.
+  - "0/5 on belt" removido; só a pilha física + o texto no chão
+    permanecem como indicador de capacidade.
+  - Confirmado um pilar sumindo com uma pequena janela de animação (não
+    mais um pop instantâneo) num dos frames de teste.
+
+PENDÊNCIA / PRÓXIMO PASSO:
+- O pedido de "analisar o vídeo de referência pro timing" não pôde ser
+  atendido literalmente nesta sessão (sem acesso ao arquivo de vídeo) —
+  os novos valores de velocidade/cadência são uma estimativa generosa
+  baseada só na descrição em texto; vale comparar lado a lado com o
+  clipe original assim que possível e ajustar os números finos.
+- Não implementei nenhum feedback visual (esmaecer/desabilitar) nos
+  porcos da fila quando `hasRoomForNewFiche()` bloqueia um pick — hoje o
+  clique simplesmente não faz nada; um indicador visual seria um bom
+  próximo passo de polish.
+- Os sons são deliberadamente placeholders sintéticos (osciladores/ruído
+  via Web Audio), não arquivos de áudio reais — o objetivo desta rodada
+  era só garantir que cada interação já tem um hook de som, não a
+  qualidade final do áudio.

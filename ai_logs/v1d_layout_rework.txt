@@ -1,0 +1,109 @@
+[SESSION] Reformulação de layout guiada por anotações em screenshots + rascunhos
+[DATA] 2026-09-07
+
+CONTEXTO:
+O usuário anexou 9 imagens: capturas do jogo atual com anotações coloridas
+marcando esteira/tabuleiro (verde), slots de porquinhos na esteira (azul),
+fila de escolha (vermelho) e um retângulo novo (laranja) indicando onde
+deveria ficar um elemento visual de "bandeja de fichas"; rascunhos à mão
+mostrando a tridimensionalidade da bandeja (fichas saindo de um túnel),
+a esteira com bordas arredondadas e leve altura, e o porquinho decomposto
+em formas primitivas (corpo arredondado, orelhas retangulares, focinho e
+patas cilíndricas, olhos/narinas extrudados); e um print do jogo de
+referência mostrando os porquinhos na fila com o número de tiros em cima.
+
+PEDIDOS (lista):
+1. Câmera mais isométrica/top-view para a cena 3D.
+2. Esteira como objeto 3D de verdade, com bordas arredondadas, leve altura,
+   e movimento fluido do porquinho pelas curvas (não mais cantos retos).
+3. Elemento visual de "bandeja de fichas" no canto de entrada da esteira,
+   com as fichas ganhando volume (não só um HUD HTML plano).
+4. Fila de porquinhos reestruturada: 4 "filas" (colunas) de 3 porquinhos
+   cada (era 1 fileira de 4) — ao escolher um, a coluna dele anda e um
+   novo entra no final da MESMA coluna.
+5. Fila renderizada com ícones de porquinho (não só cards numéricos),
+   brancos/pretos, com o número de tiros em cima — como no vídeo de
+   referência.
+6. Modelo do porquinho reconstruído a partir de primitivas conforme o
+   rascunho: corpo arredondado, orelhas, focinho e patas cilíndricas,
+   olhos/narinas.
+7. Mais contraste nos blocos brancos do tabuleiro.
+8. Bolinha do tiro devia ser uma "mini esfera" bem leve no desempenho.
+
+MUDANÇAS DE CÓDIGO:
+- config.js: `TRACK` ganhou `width`, `height`, `cornerRadius`,
+  `arrowCount`, `arrowSpeed`; novo bloco `TRAY` (dimensões/ângulo do
+  leque de fichas); `QUEUE` trocou `size`/único-array por
+  `columns`/`rows` (4x3); paleta de cores expandida para as peças do
+  porquinho (orelha, focinho, olho, perna) e da bandeja; pilar branco
+  virou branco puro (0xffffff) e o preto ficou bem mais escuro
+  (0x0c0c12) para contraste.
+- main.js (reescrita grande):
+  - Câmera trocada de `PerspectiveCamera` para `OrthographicCamera`
+    (visual isométrico/top-down). Bug encontrado e corrigido durante o
+    teste: o frustum estava sendo dimensionado pela ALTURA da view, o
+    que em um frame vertical (9:16) deixava a largura pequena demais e
+    cortava a esteira inteira para fora da tela — troquei para
+    dimensionar pela LARGURA.
+  - Esteira: função `buildRoundedLoopEdges` calcula um caminho real
+    (linhas + arcos de círculo) contornando os 4 cantos com raio
+    configurável — os porquinhos agora se movem por uma curva de
+    verdade nos cantos, não mais um corte seco de 90°. O visual da
+    esteira é um `ExtrudeGeometry` de um retângulo arredondado com um
+    furo (anel), com um pouco de altura, batendo com o rascunho.
+  - Bug encontrado e corrigido: o ponto de entrada (`ENTRY_POINT`,
+    onde o porquinho nasce e a bandeja fica) estava fixado no canto reto
+    do retângulo original, mas a parametrização da curva (distância 0)
+    caía em outro ponto do loop — bandeja e porquinho apareciam longe
+    de onde deveriam. Corrigido calculando `ENTRY_POINT` a partir da
+    própria função `pointAtDistance(0)`, e reordenando a construção dos
+    "edges" (arco-then-linha, não linha-then-arco) para que a distância
+    0 realmente comece perto do canto inferior esquerdo.
+  - Setas de direção: também não apareciam inicialmente — a causa era
+    simplesmente escala pequena demais para notar no primeiro teste, não
+    um bug de fato; aumentei o tamanho, ativei `depthTest:false` e
+    `renderOrder` alto para garantir que nunca fiquem escondidas atrás
+    da esteira.
+  - Bandeja de fichas: grupo 3D na `ENTRY_POINT` com uma caixa (corpo +
+    "tampa" mais clara) e um leque de 5 cartões (`BoxGeometry` finos)
+    que mudam de cor para a cor do porquinho ocupando aquele espaço da
+    esteira, e ficam neutros quando vazios; um sprite com texto "X/5"
+    fica acima.
+  - Porquinho: `buildPigMesh` monta o modelo com `RoundedBoxGeometry`
+    (corpo, do pacote `three/examples/jsm/geometries/RoundedBoxGeometry`
+    — já incluso na dependência `three`, não precisou de pacote novo),
+    duas orelhas (`BoxGeometry` levemente rotacionadas), focinho e patas
+    (`CylinderGeometry`), olhos e narinas (cilindros pequenos escuros).
+  - Fila: `lanes` agora é uma matriz 4x3; `onPick(coluna, linha)` remove
+    o item, dá `splice`+`push` só naquela coluna e re-renderiza. O HTML
+    trocou de "cards com número" para ícones de porquinho em CSS puro
+    (corpo, orelhas, focinho, olhos, narinas) com o número de tiros num
+    selo acima — mantém leve (sem WebGL extra) e ainda assim visualmente
+    fiel ao vídeo de referência.
+  - Projétil: esfera reduzida de (0.09, 8, 8) para (0.07, 6, 6) e com
+    geometria compartilhada entre todos os projéteis (`PROJECTILE_GEO`
+    criado uma única vez) — menos alocação por tiro.
+
+TESTE:
+- npm run build: sucesso.
+- Depurei visualmente em 3 rodadas de screenshot com Playwright (viewport
+  420x860) até identificar e corrigir dois bugs reais (frustum dimensionado
+  errado escondendo a esteira inteira; ponto de entrada dessincronizado da
+  curva real do caminho) — nenhum dos dois gerava erro no console, só
+  sumiam objetos da cena, por isso precisei inspecionar posições/NDC
+  projetadas via um hook de debug temporário (removido do código final).
+- Confirmei visualmente: esteira arredondada com altura e setas animadas,
+  bandeja "X/5" no canto de entrada, porquinhos com o modelo novo
+  aparecendo e atirando (munição contando de 20 para baixo), fila 4x3 com
+  ícones de porco brancos/pretos e número de tiros, contraste bem mais
+  forte entre pilares brancos e pretos, capacidade "2/5 on belt" refletindo
+  dois porquinhos ativos simultâneos.
+
+PENDÊNCIA / PRÓXIMO PASSO:
+- A bandeja de fichas fica parcialmente escondida atrás do próprio
+  porquinho quando ele está parado bem no ponto de entrada — aceitável
+  para v1, mas pode valer revisar o posicionamento/leque quando entrarmos
+  em polish (v3).
+- Direção exata das setas nos cantos arredondados não foi conferida com
+  precisão milimétrica (a curvatura pequena dificulta ver a olho nu no
+  screenshot) — validar jogando ao vivo.

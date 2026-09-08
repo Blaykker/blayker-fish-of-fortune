@@ -1,0 +1,225 @@
+v1j — Layout match to reference image + tile/pillar/lighting rework
+====================================================================
+
+CONTEXTO
+--------
+Depois do passe v1i (correção de geometria da esteira + reescrita da
+fila + sons placeholder), o cliente mandou 3 imagens: imagem 1 é a
+referência de disposição/proporção desejada, imagem 2 é um print do
+estado atual do jogo (naquele momento), imagem 3 mostra o "5/5" no
+tamanho/posição desejados (já implementado no v1i). O feedback pedia
+uma rodada grande de ajustes de proporção/layout + reformulação de
+props (pilha de fichas, pilares, iluminação, área de destruição do
+porco, fonte do HUD).
+
+PROMPT DO USUÁRIO (transcrito, voz->texto, mantendo a pontuação original)
+--------------------------------------------------------------------
+"imagem 2 mostra como o jogo esta agora, e imagem 1 mostra como q quero
+a disposicao e proporcao dos elementos e modelos em tela [...]" —
+cobrindo: (1) disposição/proporção geral igual à imagem 1; (2) tile
+apenas ligeiramente maior que a área do pé do porco (estava enorme);
+(3) esteira mais rápida + clicar na fila com constância/fluidez; (4)
+porcos da fila do tamanho/proporção da imagem 1, idle = leve balançar
+para frente/trás sem tirar os pés do chão; (5) pilares com 1 de vida
+(1 tiro destrói) + animação de destruição em bounce elástico
+(diminui rápido, cresce, diminui, tudo elástico); (6) porco da esteira
+2x maior; (7) pilha de tiles NA VERTICAL, empilhados lado a lado (como
+livros), com animação de colocar na esteira sendo o tile mais à
+direita andar e girar no eixo inferior horizontal até ficar deitado
+sobre a esteira; (8) pilares com cantos/bordas arredondadas; (9)
+iluminação geral vindo do canto inferior direito (sudeste), sombra a
+45°; (10) espaço dedicado de destruição do porco no fim da esteira —
+um quadrado/buraco onde ele cai (placeholder, elemento final fica para
+depois); (11) fonte com borda dinâmica/cômica para os números do HUD,
+ou uma fonte mais "casual"; (12) organização geral da cena coerente
+com a imagem 1.
+
+MUDANÇAS DE CÓDIGO
+------------------
+
+1. Esteira mais rápida (`PIG.speed` / `TRACK.arrowSpeed`: 4.5 -> 6.5,
+   `PIG.fireIntervalBase`: 90 -> 75ms). A maior parte do pedido de
+   "clicar com constância e fluidez" na fila é justamente isso: com a
+   esteira mais rápida, a capacidade libera mais rápido e o jogador
+   consegue continuar clicando sem esperar tanto — reduzi também
+   `QUEUE.slideDuration` (0.32->0.24) e `flightDuration` (0.42->0.3)
+   para a resposta ao clique ficar mais imediata.
+
+2. Tile drasticamente menor: `TILE.width/depth` 3.4 -> 1.6 (era um
+   tabuleiro gigante comparado ao porco). Calculei o "footprint" real
+   do pé do porco com `PIG.beltScale=2`: pernas em torno de
+   (±0.2,±0.16) + raio 0.06 -> ~1.0x0.9 de pegada real, corpo um pouco
+   mais largo (~1.24). 1.6 fica "ligeiramente maior" que isso, como
+   pedido.
+
+3. `PIG.beltScale`: 3 -> 2 ("quero o porco da esteira 2x maior"). Li
+   isso do mesmo jeito que a instrução equivalente da fila no v1i
+   ("porcos 2x maior", que trocou o multiplicador de 5x para 2x, não
+   multiplicou 5x por 2) — ou seja, tratei como o novo valor absoluto,
+   não mais um fator em cima do 3x anterior. Fica registrado aqui como
+   decisão explícita, caso não seja a leitura correta.
+
+4. Fila (`QUEUE`): `pigScale` 2 -> 1.4, `laneSpacing`/`rowSpacing`
+   ajustados (ver nota abaixo sobre `rowSpacing`), `areaOffsetZ`
+   15 -> 11, `hiddenRowExtraOffset` 16 -> 13. Duas rodadas de
+   screenshot+ajuste: a primeira tentativa reduziu `rowSpacing` junto
+   com `pigScale` (para 1.7) e o resultado ficou com as etiquetas de
+   munição de fileiras adjacentes se sobrepondo visualmente na tela —
+   a câmera isométrica com ângulo bem alto comprime bastante a
+   distância Z na projeção da tela, então reduzir a distância Z na
+   mesma proporção que o tamanho do porco não é suficiente; tive que
+   manter `rowSpacing` relativamente generoso (3.1) mesmo com o porco
+   bem menor, para as fileiras continuarem legíveis (confirmado via
+   zoom no screenshot: com 3.1 cada fileira ficou nitidamente separada
+   e alinhada, sem sobreposição de números).
+
+5. Idle da fila com balanço para frente/trás: adicionado
+   `body.rotation.x = Math.sin(t * 1.7) * 0.07` dentro do modo 'idle'
+   de `animatePigProcedural` — só o corpo/torso balança (as pernas não
+   são tocadas nesse modo, então os "pés" continuam no lugar); resetado
+   para 0 no modo 'walk' para não vazar o balanço pro ciclo de andar.
+   Essa é a mesma função usada tanto pelos porcos da fila quanto pelos
+   porcos parados/andando na esteira (idle), então o efeito aparece nos
+   dois lugares — decisão deliberada, dá mais vida ao modelo sem
+   arriscar quebrar nada específico da esteira.
+
+6. Pilares: 1 tiro já destruía (`destroyPillar` é chamado no primeiro
+   impacto, não havia HP de verdade) — então o pedido de "1 de vida"
+   já estava atendido; o que mudou de verdade foi a ANIMAÇÃO de
+   destruição. Troquei o "jolt de posição + shrink monotônico" antigo
+   por uma curva de escala elástica em 4 trechos
+   (`elasticDestroyScale`): encolhe rápido pra 0.5 (t<0.18), cresce com
+   overshoot até 1.3 (t<0.45), encolhe de novo até 0.8 (t<0.72), e
+   finalmente some (t<1.0) — junto com uma leve rotação Y crescente
+   pra dar uma sensação de "estilhaçando" em vez de só encolher.
+
+7. Pilares com `RoundedBoxGeometry` (raio `GRID.pillarCornerRadius =
+   0.07`, 2 segmentos — mantive baixo porque roda dentro de um
+   InstancedMesh com até 676 instâncias) em vez do `BoxGeometry`
+   original.
+
+8. Reformulação da pilha de fichas (a mudança mais estrutural desta
+   rodada): a pilha deixou de crescer para cima (empilhamento
+   vertical) e virou uma FILEIRA de tiles em pé, um do lado do outro
+   (`buildFicheStack`/`stackSlotPosition` reescritos). Cada tile
+   individual fica com `rotation.x = Math.PI/2` (em pé, como um livro),
+   e a fileira se estende ao longo da tangente do canto de entrada
+   (`stackRowDir`, perpendicular ao vetor radial do centro do arco até
+   a âncora da pilha) — usei a tangente em vez de um eixo arbitrário
+   pra fileira ficar alinhada com a curvatura da esteira ali, não
+   cortando por cima do tabuleiro.
+   - Bug pego na primeira tentativa: usei o espaçamento cheio
+     `TILE.width + stackGap` entre os tiles da fileira — com 5 tiles
+     isso dava ~7 unidades de mundo, quase metade da largura do
+     tabuleiro inteiro, e a fileira saiu literalmente da tela (foi
+     visível no screenshot: as fichas indo em direção ao canto
+     superior esquerdo, cortadas pela borda do frame). Troquei para um
+     espaçamento parcial (`STACK_ROW_STEP = TILE.width * 0.42 +
+     stackGap`), fazendo os tiles se sobreporem como um "leque de
+     cartas/livros" em vez de ficarem totalmente separados — bem mais
+     compacto e ainda dá pra contar cada um pela borda que aparece.
+   - A animação de "puxar" o tile pra esteira (`spawnRig`, fase
+     'entering') agora também gira `tileMesh.rotation.x` de `PI/2`
+     (em pé) até `0` (deitado) usando o mesmo `eased` que já
+     controlava a posição — o tile "tomba pra frente" enquanto anda até
+     a esteira, terminando deitado bem no instante em que chega,
+     exatamente como pedido ("o mais a direito andar e girar no eixo
+     inferior horizontal... até estar com o tile deitado").
+   - O label "X/5" (que antes ficava logo abaixo da base da pilha
+     vertical) precisou ser reposicionado — não tem mais um "abaixo da
+     pilha" com essa fileira horizontal — movido para fora da fileira,
+     na mesma direção radial do canto (`gapRadiusDir`), e aumentado de
+     tamanho (`TRAY_LABEL_WIDTH = TILE.width * 1.5`) porque com o tile
+     bem menor agora o label ficou minúsculo e ilegível na primeira
+     tentativa (confirmado via zoom, corrigido na segunda rodada).
+
+9. Iluminação: `LIGHTING.sunPosition` recalculada para um verdadeiro
+   45°/45° a partir do canto inferior direito da tela (sudeste): com
+   x==z (mesma distância nos dois eixos horizontais = azimute de 45°,
+   já que direita da tela ~= +X do mundo e parte de baixo da tela ~=
+   +Z do mundo nesta câmera) e y = sqrt(x²+z²) (elevação de 45° também,
+   já que tan(45°)=1=altura/distância-horizontal) — usei x=z=7,
+   y≈9.9. Isso deixa a sombra projetada num ângulo de 45° limpo nas
+   duas direções, em vez do "sol baixo vindo de um lado" mais raso de
+   antes.
+
+10. Área de destruição do porco: novo prop `holeMesh` (config
+    `DEATH_ZONE`), um retângulo escuro (`RoundedBoxGeometry`, cor
+    quase preta) posicionado exatamente no ponto onde a esteira
+    "termina" visualmente (`pointAtDistance(RED_ZONE_DIST)` —
+    fisicamente é o mesmo canto onde a pilha de fichas vive, só que do
+    outro lado do vão, já que entrada e "morte" ficam adjacentes no
+    mesmo gap da esteira). `pig.tick` ganhou uma nova fase 'falling':
+    ao atingir `RED_ZONE_DIST`, o porco não é mais descartado
+    instantaneamente — ele é reposicionado exatamente sobre o buraco e
+    anima afundando (`rig.position.y` decrescendo) + encolhendo
+    (`rig.scale`) por `DEATH_ZONE.fallDuration` (0.32s) antes de ser
+    de fato removido. O som `sfx.pigFall()` foi movido para o
+    INSTANTE em que a queda começa (não mais para quando a animação
+    termina), pra dar feedback imediato.
+
+11. Fonte + borda cômica: adicionada a fonte "Fredoka" via Google Fonts
+    (`<link>` no index.html) — mais redonda/casual, dentro da estética
+    de jogo mobile casual pedida. Como não existe uma forma nativa de
+    aplicar "borda dinâmica" a uma fonte no Canvas 2D, implementei via
+    a técnica padrão de contorno cômico: desenhar o texto duas vezes no
+    mesmo canvas, primeiro com `strokeText` (contorno grosso,
+    `lineJoin: 'round'`) e depois com `fillText` por cima — isso
+    funciona como uma borda "dinâmica" porque se aplica a QUALQUER
+    string/número desenhado, não é uma imagem fixa. Aplicado em
+    `drawAmmoCanvas` (munição, contorno na cor oposta ao preenchimento)
+    e `drawTrayLabelCanvas` ("X/5", contorno escuro fixo). Valores
+    centralizados em `config.js` (`FONT.family`, `FONT.strokeWidth`).
+
+NOTA IMPORTANTE — LIMITAÇÃO DE AMBIENTE
+----------------------------------------
+Testei via Playwright dentro do sandbox desta sessão, que não tem
+acesso à internet real — o `<link>` do Google Fonts falha ali
+(`ERR_TUNNEL_CONNECTION_FAILED`) e o canvas cai pro fallback
+"Segoe UI"/sans-serif. Isso é uma limitação do ambiente de teste, não
+do código: no navegador do cliente (com internet normal), a fonte
+Fredoka deve carregar normalmente. Vale conferir isso ao rodar
+localmente — se por algum motivo a fonte não aparecer, o efeito de
+contorno cômico (que não depende da fonte) continua funcionando de
+qualquer forma.
+
+TESTES REALIZADOS
+------------------
+- `npm run build` limpo em toda rodada de ajuste (sem erros/warnings
+  além do aviso padrão de tamanho de chunk).
+- Playwright: screenshot de boot + estado ativo, zoom via PIL em cada
+  prop mexido (fila, pilha de fichas, buraco, porco na esteira) para
+  conferir visualmente cada mudança antes de seguir pra próxima.
+- Clique real num porco da fila via coordenadas de tela: confirmado
+  que ele voa até a ficha, a ficha anima de "em pé" para "deitada", o
+  porco passa a andar na esteira, atira (munição decrescendo
+  visivelmente rápido — 20 -> 18 -> 12 em poucos segundos, confirmando
+  a esteira/cadência mais rápidas), e some ao zerar munição.
+  Especificamente não presenciei o porco completar a volta inteira e
+  cair no buraco nesse teste (a munição AGORA some rápido demais pra
+  isso acontecer na prática — o porco sempre acaba os 20 tiros bem
+  antes de completar a volta com a cadência atual) — o código do
+  "fall" foi verificado por inspeção + testado isoladamente confirmando
+  que o buraco (`holeMesh`) está posicionado corretamente perto do
+  canto de entrada (visível no screenshot, um retângulo bem mais escuro
+  que o chão/esteira ao redor). Fica registrado como pendência de
+  verificação: como a munição praticamente sempre esgota antes da
+  volta completa com os valores atuais, a animação de queda no buraco
+  raramente (ou nunca) dispara na prática — se isso não for a
+  intenção, os valores de ammo/velocidade/cadência precisam ser
+  rebalanceados numa próxima rodada.
+- Sem erros de console/página em nenhum teste (fora os dois erros de
+  rede do Google Fonts, esperados no sandbox sem internet).
+
+PENDÊNCIAS / PRÓXIMOS PASSOS
+------------------------------
+- Confirmar com o cliente se a queda no buraco deveria acontecer com
+  mais frequência (ver nota acima sobre munição esgotar antes da
+  volta completa).
+- Confirmar a leitura de "porco da esteira 2x maior" como valor
+  absoluto (2x), não 2x em cima do 3x anterior (6x) — mesma ambiguidade
+  já sinalizada no v1i para a fila, mantendo a mesma convenção de
+  leitura pra consistência.
+- A fonte Fredoka precisa de internet para carregar (Google Fonts) —
+  funciona normalmente fora do sandbox de teste, mas vale confirmar ao
+  rodar localmente.

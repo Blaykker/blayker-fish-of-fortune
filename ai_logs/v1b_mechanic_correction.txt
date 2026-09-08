@@ -1,0 +1,71 @@
+[SESSION] Correção de interpretação do vídeo (ditada por voz pelo usuário)
+[DATA] 2026-09-07
+
+CONTEXTO:
+O usuário assistiu ao vídeo com mais atenção do que a análise automática de
+frames da IA e apontou 3 erros de interpretação na v1 original. Ele descreveu
+a mecânica falando (transcrição longa, resumida abaixo), pedindo reanálise.
+
+O QUE ESTAVA ERRADO NA PRIMEIRA VERSÃO DO V1:
+1. Mineração era "genérica" (qualquer tile aleatório) — na verdade existem
+   DUAS cores de porquinho (branco/preto) e cada um só atira nos blocos da
+   própria cor.
+2. O número acima do porquinho estava subindo (tratado como "valor
+   coletado") — na verdade é uma contagem de TIROS que começa em 20 e
+   DIMINUI a cada disparo (confirmado por dois frames do vídeo original:
+   um porquinho com "10" no início do clipe e outro com "18"/"20" mais
+   adiante — os valores na fila embaixo sempre aparecem cheios em 20,
+   só o porquinho ativo na esteira mostra o valor decrescendo).
+3. O indicador "X/5" não é progresso de etapa (não existem "5 etapas") — é
+   quantos porquinhos estão simultaneamente ativos na esteira (capacidade
+   máxima). A fila de seleção (4 porquinhos clicáveis embaixo) é um recurso
+   SEPARADO: sempre tem 4 opções disponíveis, e escolher uma só falha se a
+   esteira já estiver no limite de 5.
+4. Cada quadrado do tabuleiro de xadrez não é 1 bloco — são 4 mini-pilares
+   da mesma cor do quadrado.
+5. O porquinho atira (projétil saindo do focinho) e sempre GIRA para mirar
+   o centro da estrutura, independente da direção que está andando na
+   esteira — a mira é dissociada do movimento.
+6. Entrada dos porquinhos na esteira é no canto inferior esquerdo (não no
+   meio-inferior como a v1 original assumiu).
+
+RE-EXTRAÇÃO DE FRAMES (fps=2, ~93 frames) PARA CONFIRMAR:
+- Confirmado: valores da fila sempre "20"; porquinho ativo mostrando 10/18
+  em momentos diferentes do clipe — consistente com contagem regressiva de
+  tiros, não crescente.
+- Confirmado: erosão do tabuleiro concentrada perto de onde os porquinhos
+  atualmente estão (não distribuída aleatoriamente pelo grid inteiro) —
+  compatível com "mira no pilar vivo mais próximo da própria posição",
+  que foi a regra implementada.
+- O clipe de referência (47s) não mostra o tabuleiro sendo totalmente
+  destruído, então a condição de vitória em si não está confirmada no
+  vídeo. Decisão de design (documentada e assumida como pendente de
+  validação com o cliente): vitória = todos os pilares destruídos.
+
+MUDANÇAS NO CÓDIGO (primitive_version):
+- config.js: substituído sistema de "tiles genéricos" por GRID (células
+  6x8, 4 pilares por célula) + PIG (ammoStart=20, fireIntervalMs=380,
+  projectileSpeed=14) + BELT.capacity=5 + QUEUE.size=4.
+- main.js: reescrito do zero — grid de pilares coloridos, porquinhos com
+  cor própria, rotação constante mirando o centro (group.lookAt), sistema
+  de projétil (esfera viajando do focinho até o pilar-alvo), contagem
+  regressiva de munição, HUD de capacidade separado da fila de seleção,
+  condição de vitória = grid totalmente destruído.
+- index.html: HUD de capacidade movido para canto inferior esquerdo; slots
+  da fila agora têm cor (branco/preto) refletindo o porquinho que
+  representam.
+
+TESTE:
+- npm run build: sucesso.
+- Smoke test Playwright: 2 cliques em slots diferentes (branco + preto),
+  aguardei ~3s, confirmei visualmente (screenshot) que:
+  - a contagem "X/5 na esteira" atualizou corretamente (2/5);
+  - os números de munição dos porquinhos ativos desceram de 20 -> 17 e
+    20 -> 16/14 nos dois porquinhos;
+  - os pilares destruídos ficaram concentrados perto da base do grid,
+    onde os porquinhos estavam no momento — bate com o padrão visto no
+    vídeo de referência.
+
+PERGUNTA EM ABERTO PARA O USUÁRIO:
+- Confirmar a condição de vitória (grid 100% destruído é a única opção
+  plausível a partir do clipe, mas vale confirmar antes de v2/v3).

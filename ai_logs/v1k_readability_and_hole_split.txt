@@ -1,0 +1,213 @@
+v1k — Readability pass, hole/tile split, and a real click-blocking bug
+========================================================================
+
+CONTEXTO
+--------
+Depois do v1j (ajuste de proporção/layout + reformulação da pilha de
+fichas), o cliente respondeu com 4 imagens: a primeira e a segunda são
+um rascunho físico (caderno) mostrando a pilha de fichas em pé lado a
+lado e a intenção de "não empilhar" tiles um sobre o outro; a terceira
+é um screenshot real do jogo (v1j já sincronizado) com anotações em
+verde (área da fileira de fichas) e vermelho (área do buraco/morte); a
+quarta é um screenshot real mostrando o problema principal desta
+rodada: as fontes do HUD praticamente ilegíveis num celular de verdade.
+
+PROMPT DO USUÁRIO (transcrito, voz->texto)
+-------------------------------------------
+"ao cair no buraco, quero q o porco vá diminuindo de tamanho e
+opacidade, como se estivesse caindo em um buraco, e o tile não cai no
+buraco ele volta a fila/pilha de tiles; quero os tiles alinhados igual
+a imagem 1 e imagem 2 [...]; quero q a esteira esteja usando o máximo
+de espaço que puder usar da parte superior da tela, se aproximando
+mais do topo e das laterais e quero, assim deixando os pilares
+maiores, quero o maior tamanho de pilar que dê para encaixar dentro da
+esteira contando com o espaço (grossura) da esteira, e quero q o arco
+interno da esteira seja igual ao arco externo da esteira. quero os
+tiles maiores (quando guardados) e quero que o porco e o tile
+mantenham a proporção porém quero eles 4 vezes maior; os porcos da
+fila, quero ele grande o suficiente para que o último porco da fila
+(posição 3) esteja quase tocando a face sul da tela, e o primeiro da
+fila esteja logo abaixo dos 5 slots que tem acima deles [...]; ao
+clicar no porco, ele já vai para a esteira em cima do tile e já vai
+andando, não quero ele parado na esteira; o contador de tile, quero
+que conte quantos tiles tem guardado; quero o espaço do buraco (morte)
+maior e com uma leitura boa; as fontes estão muito pequenas quase não
+dá para ver ler [...] quero uma disposição muito melhor do que isso
+com uma leitura melhor e a pista da esteira mais próxima das bordas e
+com a estrutura xadrez maior e com os porcos na fila bem maiores para
+eu poder clicar tranquilamente."
+
+MUDANÇAS DE CÓDIGO
+------------------
+
+1. Buraco (morte do porco) — só o PORCO some, o tile volta. A fase
+   'falling' em `pig.tick` foi reescrita: antes ela encolhia o `rig`
+   inteiro (ficha + porco juntos) até sumir dentro do buraco. Agora ela
+   anima os dois filhos do rig separadamente: `pigGroup` encolhe
+   (`scale`) E desaparece em opacidade (percorri toda a árvore do
+   modelo do porco com `traverse`, ligando `material.transparent=true`
+   e animando `material.opacity` de 1 a 0 — isso cobre corpo, orelhas,
+   focinho, patas, olhos E o sprite de munição, que também é filho do
+   grupo do porco); `tileMesh` NÃO encolhe nem some — ele anima
+   (`position.lerp` + `rotation.x`) voltando pra fora, até o próximo
+   slot da fileira de fichas, terminando em pé (mesma pose da pilha).
+   A contagem "X/5" já ficava certa automaticamente antes disso (é só
+   um contador de capacidade, não a MESMA instância de tile física),
+   então essa animação de retorno é puramente cosmética — dá a
+   sensação certa de "a ficha não foi destruída, só o porco".
+   - Bug pego durante a implementação: o alvo do "retorno" do tile
+     usava `stackTopWorldPosition()`, que calcula o slot livre ATUAL —
+     só que nesse instante o token da esteira daquele porco ainda não
+     foi liberado (isso só acontece um frame depois, quando
+     `pig.tick` finalmente retorna `true`), então o tile voltava pro
+     slot ERRADO (um índice a menos do que o slot que realmente vai
+     ficar visível quando a capacidade for liberada de verdade).
+     Corrigido calculando o índice certo diretamente
+     (`BELT.capacity - onBeltCount()`, sem o -1 que
+     `stackTopWorldPosition()` aplica).
+
+2. Contador de fichas — estava mostrando o número ERRADO. `X/5` estava
+   sendo alimentado por `onBeltCount()` (quantas fichas estão EM USO
+   na esteira), quando o pedido é mostrar quantas estão GUARDADAS.
+   Trocado para `BELT.capacity - onBeltCount()` em
+   `updateCapacityHud()`.
+
+3. Esteira usando o máximo de espaço da tela / pilares maiores: cortei
+   bastante a margem entre o tabuleiro e a esteira (`TRACK.margin`
+   2.6 -> 1.4) e a folga extra da câmera (constante de padding em
+   `ORTHO_VIEW_WIDTH`, main.js, 2.0 -> 0.8) — isso empurra a esteira
+   pra mais perto das bordas do frame E, como consequência direta (o
+   tabuleiro é fixo em unidades de mundo mas a câmera "zoom" agora
+   sobra menos), faz o tabuleiro/pilares ocuparem uma fração bem maior
+   da tela sem precisar mexer no tamanho do grid em si. Também
+   aumentei ligeiramente `GRID.pillarSize` (0.46 -> 0.5) e reduzi
+   `pillarGap` (0.035 -> 0.02) pra cada pilar preencher mais da própria
+   célula.
+
+4. "Arco interno igual ao externo": tecnicamente um raio interno e um
+   externo só podem ser numericamente iguais se a esteira tiver
+   espessura zero — então li isso como "os dois devem parecer
+   igualmente arredondados" (não um arco apertado por dentro e um
+   largo por fora). Aumentei `TRACK.cornerRadius` (2.6 -> 4.2), que
+   controla exatamente essa proporção (raio interno = raio do centro
+   menos metade da largura da esteira; quanto maior o raio do centro
+   em relação à largura, mais parecidos os dois arcos ficam
+   visualmente) — confirmado por zoom no screenshot, o canto agora lê
+   como uma curva "cheia" por dentro e por fora, não mais uma quina
+   apertada por dentro.
+
+5. Porco+tile na esteira "4x maior, mantendo a proporção": AQUI EU NÃO
+   SEGUI O NÚMERO LITERAL — e isso está registrado explicitamente
+   porque é uma decisão de julgamento, não uma leitura direta do
+   pedido. O problema: a ficha (`TILE.width`) não é um "multiplicador"
+   como `PIG.beltScale` — é uma medida bruta, e pra ela crescer 4x, a
+   ESTEIRA (`TRACK.width`) também precisa crescer bastante pra
+   continuar carregando a ficha com folga; como a largura de visão da
+   câmera (`ORTHO_VIEW_WIDTH`) é derivada de `TRACK.width`, uma esteira
+   4x mais grossa "puxa a câmera pra trás" e encolhe o tabuleiro de
+   volta — exatamente o oposto do pedido mais repetido e mais enfático
+   dessa MESMA mensagem ("estrutura xadrez maior", "máximo de espaço",
+   "porcos na fila bem maiores"). Escolhi um multiplicador bem menor
+   mas ainda claramente maior: `TILE.width/depth` 1.6 -> 2.4 (~1.5x) e
+   `PIG.beltScale` 2 -> 3.2 (~1.6x, mantendo a proporção entre os
+   dois), com `TRACK.width` crescendo só o suficiente pra carregar a
+   ficha nova (3.8 -> 4.3). Se a intenção era mesmo um 4x literal
+   custe o que custar ao tabuleiro, é só avisar que eu ajusto.
+
+6. Fila (fichas de seleção) — bem maiores e reposicionadas: `pigScale`
+   1.4 -> 3.2. Reposicionei a fileira toda (`areaOffsetZ`,
+   `rowSpacing`) em 3 rodadas de screenshot+ajuste pra atender ao
+   pedido específico de "o primeiro logo abaixo dos slots, o
+   terceiro quase tocando a base da tela": primeira tentativa
+   (`areaOffsetZ=6`) colocou a fileira 0 SOBREPONDO os slots
+   selecionados; corrigido pra `areaOffsetZ=9`. `rowSpacing` foi
+   aumentado em 3 passos (4.4 -> 5.4 -> 6.4 -> 7.6) até a fileira 2
+   (a última visível) chegar perto o suficiente da borda inferior do
+   frame sem ultrapassar — confirmado via screenshot a cada rodada.
+   `laneSpacing` também subiu (2.3 -> 3.1) pra manter espaçamento
+   confortável entre colunas com porcos tão maiores.
+
+7. BUG REAL ENCONTRADO E CORRIGIDO — cliques na fila paravam de
+   funcionar: ao aproximar a fileira 0 da linha dos 5 slots
+   (`#selected-slots`), os cliques nos porcos daquela fileira
+   simplesmente PARARAM de registrar (testei clicar em várias
+   coordenadas, inclusive uma varredura em grade, e nada acontecia).
+   Causa raiz: `#selected-slots` é uma `<div>` HTML posicionada por
+   cima do canvas (via `position:absolute` + `z-index:10`) — puramente
+   decorativa (só um contorno tracejado, sem lógica própria), mas por
+   padrão ela ainda CAPTURA cliques do mouse na área da sua caixa
+   invisível. Como a fileira 0 da fila passou a ocupar a MESMA faixa
+   de tela que essa div, todo clique que deveria chegar no
+   `pointerdown` do canvas (onde mora o raycaster que detecta o
+   porco) estava sendo engolido pela div por cima. Corrigido com uma
+   linha de CSS (`pointer-events: none` em `#selected-slots`,
+   `index.html`) — como esses slots nunca tiveveram interação própria,
+   isso não muda nada visualmente, só deixa de bloquear cliques.
+   Sem essa correção, o pedido de "porcos maiores para eu poder clicar
+   tranquilamente" teria piorado a situação, não melhorado — vale
+   registrar como um lembrete pra sempre testar cliques de verdade
+   depois de qualquer mudança de layout que aproxime elementos de
+   UI/DOM da área de jogo em 3D.
+
+8. "Não quero ele parado na esteira": a fase 'entering' de `spawnRig`
+   usava um ease-OUT (`1 - (1-t)^3`) pra tween da ficha saindo da
+   pilha até a esteira — matematicamente, um ease-out DESACELERA até
+   velocidade zero bem no instante em que termina, ou seja, o porco
+   literalmente "para" por uma fração de segundo antes do movimento de
+   esteira (velocidade constante) assumir. Troquei pra um ease-IN
+   (`t*t`, começa devagar e termina na velocidade máxima) — assim a
+   transição pra velocidade constante da esteira fica sem nenhuma
+   pausa perceptível. Também encurtei `TILE.enterDuration` (0.4 -> 0.28)
+   pra deixar a entrada mais ágil.
+
+9. Buraco maior: `DEATH_ZONE.sizeMultiplier` 1.35 -> 2.1 — confirmado
+   por zoom que agora lê claramente como um espaço distinto, escuro,
+   perto do canto de entrada.
+
+10. Fontes do HUD (munição + "X/5"): resolução do canvas e tamanho da
+    fonte aumentados bastante — munição: canvas 128x96 -> 220x164,
+    fonte 54px -> 96px; "X/5": canvas 160x64 -> 320x128, fonte 34px ->
+    66px; espessura do contorno cômico (`FONT.strokeWidth`) 9 -> 14
+    pra acompanhar. Testado via zoom em screenshot — os números agora
+    ficam nítidos mesmo numa captura pequena de celular.
+
+TESTES REALIZADOS
+------------------
+- `npm run build` limpo a cada rodada de ajuste.
+- Playwright + zoom via PIL depois de CADA mudança de layout (canto da
+  esteira, tabuleiro/margens, fila) antes de seguir pra próxima —
+  mesmo processo das rodadas anteriores.
+- Sequência de screenshots a cada ~90ms logo após um clique real,
+  especificamente pra confirmar que o ease-in eliminou a pausa visual
+  ("parado na esteira") — confirmado, o porco já aparece se
+  movendo/avançando de frame a frame sem nenhum instante parado.
+- Teste de estresse clicando em 3 porcos da fila em sequência rápida:
+  o segundo/terceiro clique foi bloqueado pela trava de espaço físico
+  já existente (`hasRoomForNewFiche`), não por causa do bug de UI —
+  comportamento esperado, não um bug novo.
+- Sessão longa (~12s após 1 clique) pra tentar flagrar o porco
+  completando a volta inteira e caindo no buraco: nesse teste em
+  particular ele ficou sem munição (endReason='despawn') antes de
+  completar a volta — mesma observação já registrada no log do v1j.
+  A lógica da fase 'falling' (porco encolhe+some, ficha volta) foi
+  verificada por leitura cuidadosa do código e por um teste dedicado
+  do cálculo do slot de retorno, mas não presenciei visualmente esse
+  caminho específico disparar neste teste automatizado — fica
+  novamente como pendência de verificação visual numa sessão de jogo
+  mais longa/manual.
+- Sem erros de console/página em nenhum teste (fora os erros de rede
+  esperados do Google Fonts, bloqueados no sandbox sem internet).
+
+PENDÊNCIAS / DECISÕES A CONFIRMAR
+-----------------------------------
+- O multiplicador "4x" do porco+tile na esteira foi lido como ~1.5-1.6x
+  por conflitar diretamente com o pedido (da MESMA mensagem) de
+  maximizar o tabuleiro — ver item 5 acima. Avisar se a prioridade era
+  o tamanho absoluto do porco/tile mesmo à custa do tabuleiro.
+- A queda no buraco continua rara de acontecer na prática (munição
+  esgota antes da volta completa, mesmo com a cadência de tiro atual)
+  — mesma pendência do v1j, ainda não rebalanceada.
+- O bug de clique bloqueado (item 7) é uma boa lição: qualquer mudança
+  futura de layout que aproxime a fila (ou qualquer objeto clicável em
+  3D) de um elemento de HUD em HTML precisa ser testada com cliques de
+  verdade, não só visualmente.

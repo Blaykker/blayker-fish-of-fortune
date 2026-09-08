@@ -1,0 +1,147 @@
+[SESSION] Tile/fiche rig, real 3D queue, line-of-sight shooting, belt gap
+[DATA] 2026-09-07
+
+CONTEXTO:
+O usuário anexou 8 imagens: um screenshot do estado atual, um screenshot
+anotado mostrando o layout desejado (fila com modelos 3D de porco e o
+número em cima), uma sequência de 5 imagens demonstrando a animação de
+"empurrar uma ficha da pilha para a esteira, com o porco montado em cima
+dela", e um screenshot com dois quadrados anotados (verde = onde a
+ficha+porco entram na esteira; vermelho = onde o porco é destruído ao
+completar a volta, devolvendo a ficha para a pilha).
+
+PEDIDOS (lista):
+1. Fila de seleção com modelos 3D reais de porco (iguais aos da esteira),
+   não mais ícones CSS, com o número de tiros em cima.
+2. Ao selecionar um porco da fila, uma ficha (tile 3D com bordas
+   arredondadas e leve espessura) é empurrada da pilha (canto inferior
+   esquerdo) para a esteira, com o porco montado em cima dela — uma
+   animação, não um teleporte instantâneo.
+3. Sem segmento de esteira bem no canto inferior esquerdo (imagem 2) — é
+   ali que a pilha de fichas fica.
+4. Zona verde = onde a ficha+porco entram na esteira; zona vermelha = onde
+   o porco é destruído ao completar a volta e a ficha volta pra pilha.
+5. Remover o `lookAt(centro)` contínuo do porco. Em vez disso, orientação
+   fixa desde o spawn (olhando para o tabuleiro); quem gira nos cantos é a
+   ficha (até 90°), e o porco vira junto por estar "montado" nela.
+6. Corrigir bug: porcos na esteira estavam de costas (focinho para fora).
+7. Tiro maior e mais branco/brilhante, com rastro (trail) — se coubesse
+   nesta leva do v1 (não precisaria esperar o v3/polish).
+8. Regra de linha de visão ("arco e flecha"): um porco só atira num pilar
+   da própria cor se não houver um pilar da cor oposta no caminho do tiro;
+   se só houver pilares da cor oposta na frente, ele não atira.
+9. Setas da esteira acompanhando o ângulo real da curva, virando suave nos
+   cantos — a versão anterior usava uma diferença finita (duas posições
+   próximas) para estimar a tangente; conferir/corrigir se necessário.
+
+MUDANÇAS DE CÓDIGO:
+- config.js: novo bloco `TILE` (dimensões da ficha, cor por dono, cor
+  neutra da pilha, offset/espaçamento da pilha, duração da animação de
+  entrada); `PIG` ganhou `projectileRadius`, `losBlockRadius` e
+  `inwardOffset`; `PROJECTILE`/`COLORS` ganharam `projectileGlow` e um
+  branco quase puro também para o porco preto (`projectileBlack` ficou
+  bem mais claro — "mais branco" vale para os dois lados).
+- main.js (mudanças estruturais):
+  - `tangentAtDistance(dist)`: nova função que calcula a tangente EXATA
+    (analítica) da curva em qualquer ponto — para trechos retos é a
+    direção da reta; para os arcos, é a derivada de
+    (cos(ângulo), sen(ângulo)) considerando o sentido do arco. Substituiu
+    a estimativa por diferença finita (`pointAtDistance(d+eps)`) usada
+    antes tanto nas setas quanto (agora) na ficha — corrige de vez a
+    suavidade da curva nos cantos (pedido 9), já que agora é matematicamente
+    exata em vez de aproximada.
+  - `headingFromTangent(dir)`: centraliza a conversão direção->rotation.y,
+    usada tanto pelas setas quanto pelas fichas, garantindo que ambas
+    girem exatamente em conjunto no mesmo referencial.
+  - Zona verde/vermelha: o primeiro "edge" do loop (arco do canto de
+    entrada) é tratado como o "gap" da esteira — `GREEN_ZONE_DIST` é logo
+    depois desse arco, `RED_ZONE_DIST` é logo antes de voltar a ele. O
+    porco passa a viver apenas nesse intervalo de distância (não mais
+    0..totalPathLength), e as setas de direção também só existem dentro
+    dele.
+  - `buildBeltGapMask()`: em vez de reescrever a geometria do anel (que
+    usa um `Shape`+furo único), um bloco simples na cor do chão é
+    posicionado e rotacionado exatamente sobre o arco de entrada,
+    escondendo aquele trecho da esteira — resultado visual equivalente a
+    "não ter esteira ali" com uma fração do esforço de regeometrizar o
+    anel em segmentos.
+  - Pilha de fichas: `buildFicheStack()` cria `BELT.capacity` tiles (a
+    mesma geometria usada nas fichas ativas) empilhados verticalmente no
+    canto do gap; `updateFicheStack()` mostra só as N fichas ainda livres
+    (capacidade - quantas estão na esteira) — a pilha física agora É o
+    contador de capacidade, como pedido.
+  - `spawnRig(color, tokenIndex)` substitui o antigo `spawnPig`: monta um
+    grupo (`rig`) = ficha (tile) + porco montado em cima + label de
+    munição. Fase 1 ("entering"): anima (ease-out cúbico, ~0.4s) do topo
+    da pilha até a zona verde. Fase 2 ("onBelt"): o `rig` anda pela
+    esteira normalmente e sua rotação segue `headingFromTangent` da
+    tangente exata — o `pigGroup` (filho do rig) NUNCA mais é rotacionado
+    depois do spawn; só ganha, uma única vez, `PIG.inwardOffset` (-90°)
+    fixo, que é o que faz o focinho apontar pro tabuleiro em vez de
+    seguir a direção de viagem da ficha.
+  - Bug do porco de costas: resolvido pela própria reformulação acima —
+    troquei o `group.lookAt(centro)` por cálculo geométrico e precisei
+    medir experimentalmente o sinal certo de `inwardOffset` (ver TESTE).
+  - Linha de visão: `hasClearLine(from, to, corDoBloqueio)` projeta cada
+    pilar vivo da cor oposta sobre o segmento de tiro e testa a distância
+    perpendicular (usa `PIG.losBlockRadius`, ~1 pilar de largura) — só
+    conta como bloqueio um pilar realmente ENTRE atirador e alvo, não
+    apenas próximo. `findShootablePillar(cor, posição)` percorre os
+    pilares vivos da própria cor por distância crescente e retorna o
+    primeiro com linha livre; se nenhum tiver, o porco não atira nesse
+    ciclo (tenta de novo no próximo intervalo) — implementa a regra do
+    "arco e flecha" pedida.
+  - Projétil: raio subiu de 0.07 para `PIG.projectileRadius` (0.13),
+    ganhou `emissive`/`emissiveIntensity` para brilhar mais, e um rastro
+    simples: a cada ~20ms de voo spawna uma esferinha semitransparente que
+    encolhe e desaparece em 120ms (`activeTrailBits`), sem geometria nova
+    por partícula (usa `TRAIL_GEO` compartilhado).
+  - Fila 3D: a fila deixou de ser ícones CSS. Cada `.queue-pig` no HTML
+    agora é só uma área vazia (hit-area + selo de munição); a cada frame,
+    depois do render principal, `renderQueueThumbnails()` pega o
+    `getBoundingClientRect()` de cada slot, converte para pixels do
+    canvas e usa `renderer.setScissor`/`setViewport` pra desenhar, naquele
+    recorte exato, uma cena separada (`queueScene`) contendo o MESMO
+    modelo de porco usado na esteira (`buildPigMesh`) — só troca a
+    visibilidade entre uma instância branca e uma preta conforme a cor do
+    slot. Clique continua sendo um listener comum no elemento HTML, sem
+    raycasting — mantém a lógica de seleção idêntica à anterior.
+
+TESTE:
+- npm install + npm run build: sucesso.
+- Rodei `npm run dev` e testei com Playwright (viewport 420x860):
+  - Sem erros de console/página depois de 20 seleções seguidas + ~10s de
+    jogo simultâneo (só um 404 de favicon, irrelevante).
+  - Confirmei visualmente: fila mostrando os modelos 3D de porco de
+    verdade (branco/preto) com o número em cima; ficha+porco entrando na
+    esteira com uma animação de deslize (não teleporte); esteira com um
+    "buraco" visível no canto inferior esquerdo; pilha de fichas
+    encolhendo conforme a capacidade enche ("3/5 on belt" com 2 fichas
+    ainda na pilha); tiros maiores/brancos com rastro de partículas;
+    pilares sendo destruídos de forma assimétrica entre as cores (efeito
+    visual da regra de linha de visão em ação).
+  - Verifiquei matematicamente a orientação do porco: expus
+    `activePigs`/`CENTER`/`THREE` num hook de debug temporário e medi,
+    via `page.evaluate`, o produto escalar entre a direção do focinho
+    (mundo) e o vetor porco->centro em vários pontos da esteira — ficou
+    consistentemente entre 0.87 e 0.99 (quase alinhado ao centro) em 3
+    trechos diferentes do loop, confirmando que o offset fixo de -90°
+    funciona ao longo de toda a volta, não só num ponto isolado. Hook de
+    debug removido do código final antes de sincronizar.
+
+PENDÊNCIA / PRÓXIMO PASSO:
+- A animação de entrada da ficha é uma única ficha deslizando da pilha até
+  a esteira; o vídeo de referência mostra uma fileira inteira de fichas se
+  reacomodando (efeito cascata) — simplifiquei para "a ficha do topo desliza
+  até a zona verde" por ser suficiente pro objetivo (evento animado, não
+  instantâneo) sem o custo de simular a pilha inteira se movendo; posso
+  detalhar mais isso no polish (v3) se fizer diferença visual.
+- O "buraco" da esteira é uma máscara (bloco na cor do chão) sobre o arco
+  de entrada, não uma reconstrução da geometria do anel em segmentos —
+  visualmente equivalente, mas mais simples de manter; se algum ângulo de
+  câmera futuro (v2/v3) revelar a borda da máscara, aí sim vale regeometrizar
+  o anel de verdade.
+- `PIG.inwardOffset` foi determinado por medição, não só por dedução
+  matemática pura (a fórmula de heading das setas já tinha uma convenção
+  própria herdada do v1c/v1d) — documentei o valor final e o método de
+  verificação em config.js e neste log para não perder o porquê.

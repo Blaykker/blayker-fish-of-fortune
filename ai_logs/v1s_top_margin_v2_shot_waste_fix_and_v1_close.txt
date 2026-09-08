@@ -1,0 +1,120 @@
+v1s — Margem superior definitiva, correção de desperdício de tiros, fechamento da V1
+======================================================================================
+
+Feedback recebido (verbatim, com 2 screenshots anexados — imagem 1 mostrando o
+estado atual do jogo, imagem 2 anotada com as modificações pedidas):
+
+"quero a fila de porcos na exata mesma posicao , n mude. quero os slots
+tracejados, estejam mais abaixo(pois ainda esta em contato com o texto (5/5),
+1/3 da sua altura (do slot) quero como distancia da fila dos porcos. quero q
+desça mais um pouco a toda a estrutura da esteira, para ficar um espaçamento
+seguro na margem do topo da tela,n quero os porcos sendo cortados ao passar
+por cima . a imagem 1 mostra o jogo como esta, e a imagem 2 mostra as
+modificacoes q quero. quero mais um detalhe na mecanica dos tiros, quero q
+cada tiro va para um projetil , como cada pilastra tem 1 de vida, entao se
+esse pilar tem 1 tiro indo em sua direcao entao ele sera destruido , liberando
+o proximo tiro para um outro pilar disponivel . em resumo, as vezes ele gasta
+uns 3 tiros por pilastra, sendo q o primeiro tiro ja destroi a pilastra e os
+outros 2 somem por n ter mais pilastra pra acertar, causando um gasto e
+desperdicio de tiros. termini isse e monte o summari e description para esse
+push no github. quero setar ja como fechado a V1"
+
+Esta mensagem trouxe uma instrução importante de NÃO tocar na fila de porcos
+desta vez (posição já validada), mais um alvo específico e mensurável para os
+slots (1/3 da própria altura como distância até a fila), a continuação do
+ajuste de margem superior do passe anterior (que ainda não tinha resolvido o
+corte dos porcos passando por cima da esteira), um bug real na mecânica de
+tiro, e o pedido explícito de fechar a V1 de vez.
+
+O que foi feito
+----------------
+
+MARGEM SUPERIOR — desta vez sem mexer na fila de porcos:
+- **Medido, não estimado**: no build do passe anterior, a borda EXTERNA da
+  própria esteira (por onde os porcos realmente passam, não só o tabuleiro
+  visível) tinha apenas ~4px de distância da borda superior da tela — bem
+  abaixo dos ~28px das margens laterais — confirmado via medição de pixel
+  com PIL, não só inspeção visual. Isso batia com o pedido: "n quero os
+  porcos sendo cortados ao passar por cima".
+- O multiplicador do `camera.lookAt` foi reduzido ainda mais (de 1.15 para
+  1.05), empurrando o bloco esteira/grade mais para baixo e abrindo uma
+  margem real de ~22px no topo — próxima o suficiente das margens laterais
+  (~28px) para ser considerada seguraa.
+- **Diferença chave em relação ao passe anterior**: desta vez o pedido foi
+  explícito — "quero a fila de porcos na exata mesma posicao, n mude". Como
+  esse mesmo ajuste de câmera desloca TUDO na tela (inclusive a fila), o
+  valor de `QUEUE.areaOffsetZ` foi reduzido (12.2 → 11.5) na direção OPOSTA
+  à do deslocamento da câmera, especificamente para cancelar esse
+  deslocamento e devolver a fila para a mesma posição de tela de antes.
+  Verificado por comparação de pixel entre o build anterior e o novo: a
+  fileira da frente da fila ficou a menos de ~1-2px de diferença da posição
+  original — dentro da margem de erro da própria medição.
+
+SLOTS TRACEJADOS — reposicionados com um alvo mensurável desta vez:
+- O passe anterior moveu o texto "5/5" para perto da pilha, mas não retocou
+  os slots — e como o ajuste de câmera deste passe também empurra o texto
+  "5/5" (que faz parte do bloco esteira/grade) mais para baixo, a
+  sobreposição com os slots (que ficam fixos via CSS, não acompanham a
+  câmera) piorou, exatamente como reportado ("ainda esta em contato com o
+  texto 5/5").
+- Desta vez o pedido trouxe um alvo específico e mensurável: a distância
+  entre a base dos slots e a fila de porcos deveria ser exatamente 1/3 da
+  altura do próprio slot. Medido via screenshot: com os slots no tamanho
+  atual (16% de largura, aspect-ratio 1:1, ~67px de altura num frame de
+  420px), o alvo de 1/3 dessa altura é ~22px de distância até o topo da fila
+  (medido via pixel onde a primeira fileira de porcos começa). A posição CSS
+  (`bottom`) dos slots foi recalculada a partir desses dois pontos medidos
+  (topo da fila menos 1/3 da altura do slot menos a própria altura do slot),
+  resultando em `bottom: 35%` (era 41%). Essa mesma posição também abriu uma
+  folga real (não só "quase encostando") em relação ao texto "5/5" acima —
+  não foi necessário diminuir o tamanho dos slots como o pedido previa como
+  plano B, já que só reposicionar bastou desta vez.
+- Reverificado nas mesmas 3 proporções de tela de sempre (420x747, 390x844,
+  412x915): nenhuma sobreposição entre os slots, o texto "5/5" e a fila em
+  nenhuma delas, com a fila na mesma posição de antes em todas.
+
+BUG REAL NA MECÂNICA DE TIRO — desperdício de tiros em pilastras já
+condenadas:
+- Cada pilastra tem exatamente 1 ponto de vida — ou seja, um projétil já
+  disparado e em voo em direção a uma pilastra é, na prática, uma morte já
+  garantida assim que ele chegar lá. Mas a lógica de escolha de alvo
+  (`findShootablePillar`) só excluía pilastras já `alive === false`
+  (destruídas de fato, o que só acontece quando o projétil IMPACTA) — ou
+  seja, enquanto o primeiro tiro ainda estava viajando até uma pilastra, ela
+  continuava contando como um alvo válido, e um porco (ou outro porco)
+  podia disparar mais tiros contra ela. Resultado: às vezes 2-3 tiros eram
+  gastos numa mesma pilastra, com o primeiro já garantindo a destruição e os
+  demais simplesmente "sumindo" (chegando a um alvo que já não existia mais)
+  sem nenhum efeito — desperdício puro de munição, exatamente como
+  reportado.
+- Corrigido introduzindo uma flag de reserva (`pillar.targeted`), marcada
+  como `true` no instante em que `spawnProjectile` dispara um tiro contra
+  aquela pilastra (não quando o tiro chega) e voltando a `false` quando esse
+  tiro se resolve (`tickProjectiles`, ao final do voo, independente de ter
+  acertado ou não). A função de escolha de alvo (`findShootablePillar`)
+  agora usa uma lista separada (`shootableAlivePillars`) que exclui tanto
+  pilastras já destruídas (`!alive`) quanto pilastras que já têm um tiro a
+  caminho (`targeted`), então nenhum porco escolhe mais uma pilastra que já
+  está prestes a morrer — cada tiro agora vai para uma pilastra diferente
+  (ou espera até haver uma disponível), eliminando o desperdício.
+- Testado via `npm run build` + Playwright: partida jogada por vários
+  segundos após múltiplas seleções em sequência, sem nenhum erro de JS no
+  console, com o comportamento de disparo observado normalmente (porcos
+  disparando, pilastras sendo destruídas, ammo contando corretamente).
+
+Testado via `npm run build` + Playwright nas 3 proporções de tela padrão
+(420x747, 390x844, 412x915), com medição de pixel via PIL para confirmar: a
+fila de porcos na mesma posição de tela de antes (dentro de ~1-2px); os slots
+tracejados exatamente na distância pedida (1/3 da própria altura) da fila,
+sem tocar o texto "5/5" nem a fila em nenhuma das 3 proporções; margem
+superior real (~22px, próxima das margens laterais de ~28px) acima do bloco
+esteira/grade, com os porcos não sendo mais cortados ao passar pela parte de
+cima da esteira.
+
+V1 — fechada
+-------------
+Por pedido explícito do usuário, a V1 (primitive_version) é considerada
+formalmente fechada a partir deste passe. O texto de commit/push para marcar
+esse fechamento no GitHub Desktop foi entregue separadamente na resposta ao
+usuário. O próximo passe parte para a aplicação da estética Fish of Fortune
+(styled_fof_version) sobre esta base mecânica.

@@ -1,0 +1,60 @@
+[SESSION] Implementação v1 — Primitive Prototype
+[DATA] 2026-09-07
+[FERRAMENTA] Claude (Cowork) com acesso à pasta local do repositório
+
+PROMPT DO USUÁRIO (resumo):
+"Pode focar no código e criar a mecânica do Dia 1 (v1 primitivo) direto na
+pasta primitive_version."
+
+ANÁLISE DO VÍDEO DE REFERÊNCIA (frames extraídos anteriormente):
+- Grid quadriculado (preto/branco) representando um "recurso" a ser colhido.
+- Pista em loop retangular ao redor do grid.
+- Fila de personagens numerados na parte inferior (4-5 slots visíveis).
+- Um contador numérico flutua acima do personagem que está percorrendo a
+  pista, aumentando durante o trajeto.
+- Indicador "X/5" no canto superior esquerdo = progresso por etapa.
+
+DECISÕES DE DESIGN (v1 = regra + timing, sem easing/juice):
+1. Grid 8x8 (64 tiles) em vez de tentar replicar a contagem exata do vídeo
+   (o vídeo não permite contar os tiles com precisão) — número redondo,
+   fácil de tunar em v2/v3.
+2. Mineração de tile é GLOBAL (tile aleatório entre os vivos), não
+   geolocalizada ao lado da pista onde o runner está. Justificativa: no
+   vídeo o "buraco" no grid cresce de forma pouco previsível — reproduzir a
+   correlação exata pista→tile exigiria mapear posição do runner para
+   índice do grid, o que é complexidade desnecessária para v1 (mecânica) e
+   não muda a percepção de regra pelo jogador. Documentado aqui para ficar
+   claro que foi uma escolha consciente, não uma limitação técnica.
+3. Runner percorre o loop 1x e desaparece (a "entrega" foi feita); slot da
+   fila é liberado com um novo valor aleatório ao final do trajeto — isso
+   cria a cadência de "escolher > esperar > escolher de novo" que aparece
+   no vídeo.
+4. Progressão: ao zerar os 64 tiles, a etapa avança e o grid é
+   reconstruído do zero; ao completar a 5ª etapa, mostra tela de vitória.
+
+VALORES INICIAIS (em src/config.js):
+- GRID: 8x8 tiles, tileSize 1.0, gap 0.06
+- QUEUE: 4 slots, valores aleatórios entre 10 e 30
+- RUNNER.speed = 3.2 unidades/s (percurso completo ≈ 7-8s no loop atual)
+- RUNNER.mineIntervalMs = 220ms (a cada ~0.22s remove 1 tile) → um runner
+  sozinho limpa o grid inteiro em ~14s; com 2-3 runners simultâneos (fila
+  permite múltiplos ativos ao mesmo tempo) a etapa fecha bem mais rápido,
+  o que dá ao jogador incentivo de "mandar todo mundo" — comportamento
+  compatível com o vídeo, onde várias unidades parecem estar ativas.
+- STAGES.total = 5 (bate com o "X/5" do vídeo)
+
+TESTE REALIZADO:
+- npm run build: sucesso.
+- Smoke test automatizado (Playwright headless): abre o jogo, clica em um
+  slot da fila, aguarda ~2.5s, confirma que o HUD avançou de "0/64" para
+  "12/64" e que nenhum erro de runtime foi lançado (só um 404 de favicon,
+  irrelevante). Screenshot conferido visualmente — composição (grid +
+  pista + fila + contador flutuante) bate com o vídeo de referência.
+
+PRÓXIMOS PASSOS (v2 — feel):
+- Trocar `pointAtDistance` linear por easing (ease-in ao sair do slot,
+  ease-out ao entrar na etapa seguinte).
+- Adicionar animação de escala ao clicar no slot (feedback de input
+  imediato, hoje o slot só fica "used" sem nenhuma transição de saída).
+- Revisar RUNNER.speed e mineIntervalMs com base em como o jogo "sente" ao
+  jogar por alguns minutos (pacing).

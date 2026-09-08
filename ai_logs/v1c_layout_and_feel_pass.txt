@@ -1,0 +1,82 @@
+[SESSION] Ajustes de layout e feel dentro do v1 (ditados por voz pelo usuário)
+[DATA] 2026-09-07
+
+PROMPT DO USUÁRIO (resumo, mensagem falada/transcrita):
+1. Pilares dos quadrados do tabuleiro devem ficar mais juntos (visto de
+   cima, cada quadrado deve parecer um bloco sólido feito de 4 pilares).
+2. Cadência de tiro mais rápida e mais dinâmica (variação no tempo entre
+   tiros), com um pouco de curvatura na trajetória do projétil.
+3. Quando a munição do porquinho acabar, ele deve sair da esteira
+   IMEDIATAMENTE (não esperar chegar ao fim do loop), liberando a
+   capacidade na hora.
+4. Toda a UI deve estar em inglês, não em português.
+5. Reorganizar a tela para formato vertical de celular (9:16), com a
+   esteira/tabuleiro em cima, uma fileira de 5 "fichas" de capacidade
+   entre a esteira e a fila de seleção, e a fila de 4 porquinhos
+   selecionáveis embaixo — igual ao vídeo de referência.
+6. A fila de seleção deve se comportar como fila de verdade: ao escolher
+   um porquinho, ele "sai", os outros avançam, e um novo aparece no final.
+7. Esclarecimento sobre a orientação do porquinho: o usuário não tinha
+   certeza se o cone era o focinho ou o rabo. Pedido: o porquinho deve
+   estar visivelmente "olhando" para o tabuleiro (de frente) enquanto
+   atira, então a peça de referência de direção precisa ser óbvia.
+8. Adicionar setas indicando a direção de movimento da esteira, com
+   alguma animação, como no vídeo.
+9. Manter tudo simples (v1 ainda é sobre mecânica), deixando estilização
+   e "juice" pesado para depois.
+
+MUDANÇAS NO CÓDIGO:
+- config.js: `GRID.pillarGap` reduzido para 0.035 (era um espaçamento
+  proporcional maior); pilares aumentados para 0.46 de lado — cluster de
+  4 pilares agora ocupa quase todo o quadrado da célula, com uma frestinha
+  mínima entre eles. `PIG.fireIntervalBase` caiu de 380ms para 170ms, e
+  `PIG.fireIntervalJitter` (novo, ±90ms) dá variação por tiro. Novo
+  `PIG.projectileArcHeight` para o arco do projétil.
+- main.js:
+  - Pig.tick agora retorna `true` (despawn) assim que a munição chega a 0,
+    em vez de continuar até o fim do loop.
+  - Substituí o cone (ambíguo) por uma pequena esfera vermelha de destaque
+    ("nose") na frente do porquinho, na direção -Z — que é exatamente para
+    onde `group.lookAt(centro)` aponta. Isso deixa claro qual lado é a
+    frente/focinho.
+  - Setas de direção: pequenos triângulos (`THREE.Shape` extrudado em
+    plano) distribuídos ao longo de cada segmento da esteira, "rastejando"
+    continuamente na direção do fluxo (`tickBeltArrows`).
+  - Renderer agora é dimensionado por um `ResizeObserver` sobre
+    `#canvas-holder`, dentro de um `#game-frame` fixo em proporção 9:16
+    (com media query para inverter quando o viewport já é mais estreito
+    que 9:16) — a cena deixa de depender do tamanho da janela do
+    navegador e sempre aparece como celular vertical, com letterbox nas
+    laterais em telas largas.
+  - Fila de seleção reescrita como array real (`queueData`) com
+    `splice`+`push` a cada escolha — comportamento de fila (FIFO) igual
+    ao vídeo, em vez de só reaproveitar o mesmo slot clicado.
+  - HUD de capacidade agora tem DOIS elementos, como no vídeo: o texto
+    "X/5 on belt" (pill) E uma fileira de 5 "fichas" retangulares que
+    preenchem com a cor/munição do porquinho ocupando aquele espaço na
+    esteira, esvaziando quando ele sai.
+  - Todo texto visível (HUD, overlay de vitória, botão) traduzido para
+    inglês.
+
+TESTE:
+- npm run build: sucesso.
+- Smoke test Playwright em viewport 420x860 (celular): confirmei
+  visualmente que o tabuleiro renderiza com os clusters de pilares bem
+  compactos, a fileira de 5 fichas aparece entre esteira e fila, a fila
+  de seleção mostra as 4 cores certas, e depois de clicar um slot a
+  ficha correspondente preenche com a cor+munição do porquinho.
+- Confirmei que a capacidade volta de "1/5" para "0/5" sozinha ~3.4s
+  depois do clique (20 tiros a ~170ms médios de intervalo), sem o
+  porquinho precisar terminar a volta — bate com o pedido de saída
+  imediata ao zerar a munição.
+- Ajustei o enquadramento da câmera duas vezes olhando os screenshots até
+  o tabuleiro + esteira ocuparem bem a parte de cima do quadro, com
+  espaço sobrando embaixo para a fileira de fichas e a fila.
+
+PRÓXIMOS PASSOS (v2 — feel):
+- Easing na rotação do porquinho ao entrar na esteira (hoje o lookAt é
+  instantâneo, pode ficar mecânico em curvas fechadas).
+- Animação de entrada do novo porquinho na fila (hoje ele só aparece,
+  sem "deslizar de fora pra dentro" como o usuário descreveu).
+- Revisar se o arco do projétil e a cadência aleatória precisam de mais
+  ajuste depois de assistir ao jogo rodando por mais tempo.

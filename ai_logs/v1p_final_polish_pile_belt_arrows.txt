@@ -1,0 +1,104 @@
+v1p — Últimos detalhes: pilha maior/mais grossa, esteira mais abaixo, slots menores, setas
+============================================================================================
+
+Feedback recebido (verbatim, sem imagem anexada):
+
+"ultimos detalhes . quero toda a area da esteira mais abaixo, mantendo uma borda de 2/3 do
+tamanho do espaçamento das laterais por exemplo. mantenha esse espaçamento para os lados e para
+cima e de distancia da area dos slots tracejados.; quero esses slots tracejados menor, quero 2/3
+do tamanho q ele esta. e quero eles logo abaixo, dando uma distancia media do primeiro porco da
+fila e da parte sul do texto 5/5. ; quero os tiles ligeiramente maiores, e mais grossos, e quero
+q eles tenham uma separacao entre si na pilha para q de para ver a distancia e separacao entre os
+tile . quero q a base da pilha de tile alinhado ao centro com a largura e o inicio da esteira. ;
+quero as setas da esteira ligeiramente maior mais chatas e com a opacidade menor. ; quero uma
+trasicao da mascara de sumir e apacecer as setas, seja uma transicao suave, como um blur ou um
+degrade a a seta vai desaparecendo ao se aproximar."
+
+Esta mensagem trouxe vários pedidos de acabamento numa tacada só. Documentando cada um.
+
+O que foi feito
+----------------
+
+PILHA DE FICHAS — maior, mais grossa, com separação visível:
+- `TILE.width`/`TILE.depth`: 2.4 → 2.6 ("ligeiramente maiores").
+- `TILE.height`: 0.4 → 0.6, um aumento bem mais perceptível ("mais grossos").
+- Introduzido `PILE_GAP` (0.22 unidades) como espaço real entre cada camada da pilha — antes o
+  passo vertical (`STACK_PILE_STEP`) usava só uma fração pequena do gap antigo (pensado para
+  tiles em pé, não deitados), que na prática deixava as camadas quase coladas. Agora
+  `STACK_PILE_STEP = TILE.height + PILE_GAP`, dando uma "fatia" visível de fundo entre cada tile —
+  confirmado via zoom no screenshot que dá pra contar as camadas.
+
+ALINHAMENTO DA PILHA COM O INÍCIO DA ESTEIRA:
+- Antes, a pilha era ancorada no ponto médio angular do "vão" aberto da esteira (onde não existe
+  segmento de esteira nenhum) — um ponto conceitualmente diferente de onde a esteira VISÍVEL
+  realmente começa (`GREEN_ZONE_DIST`, que fica um pouco além do vão, já dentro do primeiro
+  segmento real).
+- Troquei a âncora para: pegar o ponto exato onde a esteira visível começa
+  (`pointAtDistance(GREEN_ZONE_DIST)`), que por definição já está centralizado na LARGURA da
+  esteira ali (a linha de centro é o centro da largura, por construção) — e depois deslocar esse
+  ponto para trás, no sentido contrário ao percurso, o suficiente para a pilha ficar clara do
+  próprio caminho da esteira (ainda no vão, fora da faixa que se move). Isso é literalmente o que
+  foi pedido: "base da pilha alinhada ao centro com a largura e o início da esteira".
+
+ESTEIRA "MAIS ABAIXO" + ESPAÇAMENTOS:
+- Interpretação: reduzir o multiplicador do `camera.lookAt` (que controla o quanto a cena inteira
+  é deslocada para cima na tela) empurra o bloco esteira+grade mais para baixo — o oposto do que
+  v1m/v1l fizeram quando precisaram subir esse bloco para resolver um corte no topo. Reduzi de
+  1.2 para 1.0, o que aumentou a margem acima da grade de ~27px para ~66px (medido via screenshot
+  em pixel), uma melhora real ainda que não tenha chegado a bater exatamente a margem lateral
+  (~98px) — ver nota de limite abaixo.
+- **BUG REAL encontrado e corrigido (1ª vez)**: essa mudança desloca TUDO — incluindo a fila de
+  porcos — então a 3ª fileira voltou a cortar na borda inferior. Corrigido reajustando
+  `QUEUE.areaOffsetZ` (11.2 → 7.6).
+- **BUG REAL encontrado e corrigido (2ª vez, novo nesta rodada)**: depois de reajustar a fila,
+  sobrou uma folga boa embaixo da 3ª fileira, mas o bloco esteira+grade (agora mais abaixo)
+  chegou perto demais dos slots tracejados — e a primeira fileira da fila de porcos, por sua vez,
+  ficou colada nos slots por baixo. Ou seja: meu primeiro ajuste tentou empurrar tudo pra baixo o
+  suficiente para bater uma proporção "2/3" nas margens, só que isso não deixava espaço vertical
+  suficiente para os slots caberem confortavelmente entre o texto "5/5" e a 1ª fileira da fila —
+  as duas coisas ficaram próximas demais uma da outra depois do primeiro corte de espaço. Reduzi
+  a mudança da câmera para um valor mais moderado (a versão final usa 1.0, não o 0.85 que tentei
+  primeiro) e subi a posição dos slots (`bottom: 37% → 41%`) para reabrir espaço limpo dos dois
+  lados — confirmado via screenshot com zoom que não há mais sobreposição em nenhum dos lados.
+- **Limite prático encontrado**: bater exatamente "2/3 da margem lateral" em todas as bordas
+  (topo, laterais, e distância até os slots) ao mesmo tempo não é geometricamente livre — a
+  largura da própria esteira (que já foi validada e ajustada com cuidado em passes anteriores) e
+  o espaço vertical disponível entre a grade e a fila de porcos limitam o quanto dá pra empurrar
+  tudo para baixo sem quebrar outra coisa (como acabou de acontecer com os slots). Priorizei um
+  aumento real e visível da margem superior (dobrou, de ~27px pra ~66px) mantendo tudo dentro da
+  tela e sem sobreposições, em vez de perseguir a proporção exata "2/3" e arriscar quebrar outra
+  parte do layout. Sinalizando isso explicitamente.
+
+SLOTS TRACEJADOS — menores e reposicionados:
+- Tamanho: `width`/`max-width` reduzidos para 2/3 do valor do passe anterior (24% → 16%, 116px →
+  77px), exatamente como pedido ("2/3 do tamanho q ele esta"). Como não há mais tanta pressão de
+  encolhimento do flexbox nesse tamanho menor, `gap`/`padding` puderam voltar a valores mais
+  confortáveis (1% → 3%/6%) sem risco de estourar a largura da tela.
+- Posição: a intenção era colocá-los a uma distância "média" (equidistante) entre a base do texto
+  "5/5" e a primeira fileira da fila — medido via screenshot, o espaço disponível entre essas duas
+  referências já dava quase exatamente pra centralizar os slots ali sem sobrepor nenhum dos dois,
+  então a posição final (`bottom: 41%`) foi calibrada para isso.
+
+SETAS DA ESTEIRA — maiores, mais achatadas, mais transparentes, com fade suave:
+- Forma: aumentei o alcance ponta-a-cauda (`ARROW_TIP_X`/`ARROW_TAIL_X`, span maior) e reduzi a
+  meia-altura (`ARROW_HALF_HEIGHT`, novo — antes um valor fixo dentro da função) — isso é o que dá
+  a leitura de "maior e mais chata" (mais comprida, mais fina), não apenas "maior" em todas as
+  direções.
+- Opacidade: nova constante `ARROW_OPACITY` (0.55) reduz a opacidade geral — antes era sempre
+  1.0/opaco.
+- Transição suave (o pedido mais técnico): a máscara de entrada/saída das setas usava um corte
+  binário no shader (`discard` acima/abaixo de um limiar que varre ao longo do tempo) — visível
+  como um corte seco se movendo, não um desaparecimento gradual. Troquei para uma rampa de alpha
+  via `smoothstep` em torno do limiar (uma "banda" de transição suave, tipo um degradê/blur), com
+  a opacidade geral (`ARROW_OPACITY`) multiplicada por cima. Detalhe técnico que exigiu atenção:
+  como a banda suave tem uma largura real (não é mais um corte de espessura zero), variar o
+  limiar exatamente entre a ponta e a cauda do próprio desenho da seta causava um "pulo" visível
+  bem no início/fim da varredura (a ponta ficava parcialmente transparente mesmo no instante em
+  que deveria estar 100% visível) — corrigido estendendo o intervalo de varredura para além da
+  ponta/cauda pela mesma largura da banda suave, o que elimina a descontinuidade na transição
+  entre "varrendo" e "totalmente visível".
+
+Testado via `npm run build` + Playwright (viewport 420x747), com medição de pixels via PIL para
+confirmar as margens (topo, laterais, distância aos slots) e a ausência de sobreposição entre
+elementos de UI, além do teste de clique real de ponta a ponta confirmando que o pick, a pilha
+encolhendo e o tile mais grosso deitando na esteira continuam funcionando.

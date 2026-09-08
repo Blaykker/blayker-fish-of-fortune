@@ -1,0 +1,151 @@
+PROMPT PARA TESTAR TEMAS/ESTÉTICAS (colar direto no Gemini ou outra IA de imagem/conceito)
+=========================================================================================
+
+CONTEXTO DO JOGO (não editar, só para a IA entender o que está reskinando):
+Jogo mobile vertical (retrato), câmera ortográfica isométrica olhando de cima.
+Mecânica: um tabuleiro de xadrez (13x13 células, cada célula = 4 mini pilares
+da própria cor) fica no centro. Uma esteira em loop retangular de cantos bem
+arredondados envolve o tabuleiro, com setas de direção "andando" sobre ela.
+Porquinhos (brancos e pretos) entram na esteira montados sobre uma "ficha"
+(tile/bloco) física, giram em volta do tabuleiro uma vez, e atiram nos
+pilares da própria cor (o branco só nos brancos, o preto só nos pretos),
+sempre no mais próximo com linha de visão livre. Cada porco tem 20 tiros;
+ao zerar, sai da esteira. Uma fila de seleção (4 colunas x 3 porcos, ao sul
+da esteira) deixa o jogador escolher qual porco entra a seguir — o porco
+escolhido "voa" da fila direto para cima da ficha que entra na esteira.
+Uma fileira física de fichas no canto de entrada mostra quantas vagas
+restam ("X/5"). Objetivo: destruir todos os pilares do tabuleiro.
+
+Quero explorar temas visuais para reskinar esse jogo (ex.: pirata,
+iceberg/polar, ou outra sugestão sua) mantendo a MESMA mecânica e a mesma
+disposição espacial dos elementos — só a "roupagem" (formas, materiais,
+cores, luz, textura) muda. Para cada elemento abaixo, me dê pelo menos uma
+sugestão de como ele poderia ser reimaginado dentro do tema proposto,
+mantendo a função dele intacta.
+
+LISTA DE ELEMENTOS A SUBSTITUIR (função + características atuais):
+
+1. TABULEIRO / PILARES (função: alvo destrutível, dividido em 2 times por
+   cor, 1 tiro destrói cada um). Hoje: grade 13x13 de células, cada célula =
+   4 mini-pilares de cantos/bordas arredondados (não mais cubos de quina
+   viva) da cor do time — branco puro ou preto quase puro, material fosco.
+   Ao ser destruído, o pilar faz um bounce elástico de escala (encolhe,
+   cresce com overshoot, encolhe de novo, some) em vez de só sumir. Precisa
+   continuar lendo claramente como "2 times/cores" à distância, mesmo em
+   outro material (ex.: gelo claro vs. gelo escuro, madeira clara vs.
+   madeira escurecida, ouro vs. prata).
+
+2. ESTEIRA / TRILHO (função: caminho fechado em loop que os porcos
+   percorrem, com um vão físico onde vive a fileira de fichas). Hoje: uma
+   faixa 3D grossa, cor sólida azul-acinzentada, com leve altura/espessura
+   e cantos arredondados num raio compacto, e bem mais rápida que antes
+   (ritmo do vídeo de referência). Precisa continuar lendo como "superfície
+   de transporte" percorrível (ex.: esteira rolante mecânica, correnteza de
+   água, trilho de trem de brinquedo, cordas de convés).
+
+3. SETAS DE DIREÇÃO (função: reforçar visualmente o sentido do movimento na
+   esteira, "andando" ao longo dela, aparecendo/sumindo suavemente nas
+   pontas do vão). Hoje: triângulos 2D achatados, azul-claro, flutuando
+   levemente acima da esteira, andando bem rápido (mesma velocidade da
+   esteira). Podem virar qualquer indicador de fluxo/corrente (bolhas,
+   ondas, faíscas, pegadas).
+
+4. FICHA/TILE (função: "veículo" físico que cada porco monta para ocupar
+   capacidade da esteira — é o que fisicamente entra/sai da esteira, o
+   porco só é "carga" em cima dela). Hoje: um bloco pequeno arredondado —
+   só LIGEIRAMENTE maior que a pegada do próprio porco, não mais um bloco
+   enorme — SEMPRE da mesma cor neutra independente de qual porco está
+   montado nela. Outras ideias bem-vindas dentro do tema (ex.: iceberg
+   pequeno, bloco de baú do tesouro, casco de barquinho) — só não precisa
+   ter uma variante por time.
+
+5. FILEIRA DE FICHAS + CONTADOR "X/5" (função: mostra visualmente quantas
+   vagas de esteira restam). Hoje NÃO é mais uma pilha vertical — é uma
+   fileira de fichas EM PÉ (como livros/cartas num leque), lado a lado,
+   levemente sobrepostas, no canto de entrada da esteira. Ao ser
+   selecionada, a ficha mais externa da fileira "tomba" pra frente
+   (gira 90°) e anda até a esteira, terminando deitada. O contador "X/5"
+   fica ao lado da fileira, num texto com contorno cômico (ver item 13).
+
+6. PORQUINHOS (função: as duas "unidades" jogáveis, um time branco e um
+   preto, cada um só mira/atira nos alvos da própria cor). Hoje: modelo
+   feito de primitivas (corpo arredondado, duas orelhas, focinho cilíndrico
+   rosa, patas, olhos), diferenciado só pela cor do corpo (quase branco vs.
+   quase preto) — sem esqueleto, animação toda por seno/pivôs (idle é um
+   leve balançar do corpo pra frente/trás sem tirar os pés do chão, recuo
+   rápido só no instante de atirar, andar de verdade só na fila/embarque).
+   O número de tiros restantes fica sobre o porco, na parte plana das
+   costas (abaixo das orelhas, não flutuando acima da cabeça). O reskin
+   pode trocar completamente a criatura/unidade (ex.: piratas vs.
+   fantasmas, focas vs. pinguins) desde que dê pra diferenciar os 2 times
+   à distância e ainda tenha uma "parte de trás" plana o bastante pra
+   continuar legível com um número em cima.
+
+7. PROJÉTIL + RASTRO (função: o "tiro" que sai do focinho do porco e viaja
+   em arco até o pilar-alvo, com um rastro afinando atrás dele). Hoje: uma
+   esfera bem grande e brilhante (quase branca em ambos os times), viajando
+   rápido, com um rastro cônico do MESMO diâmetro da esfera na base,
+   afinando até a ponta atrás dela — lê como uma extensão do próprio tiro,
+   não uma cauda separada mais fina. Pode virar bola de canhão, bola de
+   neve, faísca mágica, etc.
+
+8. CHÃO (função: piso base sob todo o cenário, só recebe sombra). Hoje:
+   um plano grande, cor azul-acinzentada escura, sem textura. Fácil de
+   trocar por areia, gelo, convés de madeira, água, etc.
+
+9. LUZ GLOBAL (função: um "sol" fixo vindo de um canto, só para dar sombra
+   perceptível — luz ambiente + uma luz direcional). Hoje: vem do canto
+   inferior direito da tela (sudeste), num ângulo de 45° tanto na
+   horizontal quanto na altura, projetando uma sombra bem definida a 45°
+   de cada objeto. Tom quente clarinho (já preparando pra uma praia
+   tropical). Pode virar luz de luar frio (tema polar), luz de tocha
+   alaranjada (tema pirata/caverna), etc. — mudar só cor/intensidade já
+   muda bastante o clima (o ângulo de 45° pode ficar fixo entre os temas).
+
+10. HUD (função: hoje só o texto de munição sobre cada porco — NÃO existe
+    mais nenhuma pílula numérica de capacidade em texto solto; essa
+    informação virou só a fileira física de fichas + seu label ao lado,
+    item 5). Existe também uma fileira de 5 "slots" vazios entre a esteira
+    e a fila, reservada para um futuro sistema de itens/ações rápidas —
+    por enquanto são só um contorno tracejado, sem função nem conteúdo, e
+    o reskin pode estilizá-los como qualquer "slot vazio" do tema (moldura
+    de madeira, gelo, metal velho de navio) sem precisar pensar em como
+    mostrar um porco ali dentro.
+
+11. ÁREA DE DESTRUIÇÃO DO PORCO (função: onde o porco "morre" ao completar
+    a volta com munição zerada — precisa de um espaço físico dedicado, não
+    só um ponto invisível). Hoje: um retângulo escuro no chão, no mesmo
+    canto de entrada da esteira (do lado oposto da fileira de fichas,
+    dentro do mesmo vão sem trilho) — o porco encolhe e afunda nele ao
+    chegar lá, em vez de simplesmente sumir. É só um placeholder de espaço
+    e forma — pode virar um redemoinho, uma lata de lixo, um buraco de
+    fumaça, etc., sem mudar o tamanho/posição do espaço reservado.
+
+12. OVERLAY DE VITÓRIA (função: tela de "todos os pilares destruídos").
+    Hoje: fundo escuro semi-transparente, texto branco simples, botão
+    "Play again" em ciano. Pode ganhar qualquer moldura/ilustração do
+    tema sem mudar a lógica.
+
+13. FONTE / TIPOGRAFIA DO HUD (função: número de munição sobre o porco e
+    o contador "X/5" da fileira de fichas). Hoje usa uma fonte redonda/
+    casual (Fredoka) com um contorno grosso desenhado "na mão" via canvas
+    (stroke antes do fill) — um efeito de borda cômica que funciona em
+    cima de qualquer número/string, não é uma imagem fixa. O reskin pode
+    trocar a fonte por qualquer outra do mesmo espírito casual/cartoon
+    (arredondada, peso bem grosso) mantendo essa técnica de contorno.
+
+14. SONS (função: placeholder de efeitos sonoros — ainda não são sons
+    finais, só blipes simples gerados por código para cobrir a base:
+    clicar num porco da fila, ficha entrando na esteira, porco pousando
+    na ficha, porco atirando, tiro acertando um pilar, pilar sendo
+    destruído, porco saindo da esteira sem munição, porco caindo no buraco
+    no fim da esteira). Cada um pode virar um som temático (ex.: tema
+    pirata: madeira rangendo, canhão, splash; tema iceberg: gelo
+    rachando, vento).
+
+PERGUNTA PARA VOCÊ (IA):
+Com base nisso, sugira 2-3 temas completos (pode incluir pirata e
+iceberg, e mais um de sua escolha) cobrindo TODOS os 14 elementos acima,
+e para cada tema me diga rapidamente por que ele funciona bem para "2
+times competindo por destruir a estrutura do adversário" nesse formato de
+playable ad mobile.

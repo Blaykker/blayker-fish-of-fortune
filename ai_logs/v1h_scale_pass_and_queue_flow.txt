@@ -1,0 +1,166 @@
+[SESSION] Belt/arrow speed sync, idle vs. shoot pose, 5x queue pigs,
+"infinite queue" fill flow, 4x bigger fiche + thicker/smoother belt, 3x
+pillars, reskin brainstorm prompt
+[DATA] 2026-09-07
+
+CONTEXTO:
+O usuário anexou 2 recortes pequenos mostrando o mesmo trecho de canto da
+esteira (uma seta triangular sobre um leque de linhas escuras irradiando do
+canto interno — o defeito de "pontas/facetas" no arredondamento do canto,
+visível de perto) e descreveu, por texto, uma leva grande de ajustes de
+velocidade, animação, escala de elementos e do fluxo da fila, além de pedir
+um prompt à parte para testar novas estéticas no Gemini.
+
+PEDIDOS (lista):
+1. Porcos na esteira devem andar na MESMA velocidade exata das setas
+   (estão sobre a mesma superfície/esteira).
+2. Porcos em cima da esteira devem ficar em animação de IDLE por padrão,
+   só ativando a animação de tiro (recoil) no momento de atirar — estavam
+   presos numa animação de "walk" constante.
+3. Porcos da fila 5x maiores.
+4. Fluxo de preenchimento da fila esclarecido com exemplo: ao escolher o
+   porco 2 (do meio, dos 3), o porco 3 sobe (andando) para a posição 2 que
+   ficou vazia, e SÓ ENTÃO aparece um porco novo na posição 3 — entrando
+   andando de fora da tela para dentro, como se fosse uma fila infinita
+   (nunca "pop" instantâneo numa posição já visível). Caso o porco da
+   posição 1 seja escolhido, os porcos 2 e 3 sobem cada um 1 posição, e só
+   depois aparece o novo na posição 3, também vindo de fora da tela.
+5. Fichas/tiles do canto inferior esquerdo (pilha) 4x maiores, com
+   espessura real visível (não mais uma placa fina) — antecipando a futura
+   troca por uma pequena "jangada" de madeira de ~1m².
+6. Porco em cima da esteira 3x maior (substituindo o 1.5x da rodada
+   anterior).
+7. Releitura total do layout, reproporcionando todos os elementos/textos
+   para leitura perfeita num celular na posição vertical.
+8. Faixa da esteira bem mais grossa — o máximo possível mantendo uma
+   pequena margem das bordas da tela e espaço suficiente pro tabuleiro.
+9. Pilares do tabuleiro 3x mais altos, mantendo largura/profundidade.
+10. Um único texto de quantidade de fichas ("5/5"), só abaixo (nunca acima)
+    da pilha, com um pequeno espaçamento entre as fichas empilhadas para
+    dar pra contar tranquilamente.
+11. Cantos arredondados da esteira sem "pontas"/facetas visíveis (imagem
+    anexada mostrando o defeito de perto).
+12. Pediu também que eu montasse uma lista, para colar no Gemini, de todos
+    os elementos que precisam ser substituídos numa futura reestilização
+    (tema pirata, iceberg, etc.), explicando a função e características de
+    cada um.
+
+MUDANÇAS DE CÓDIGO:
+- config.js:
+  - `PIG.speed` e `TRACK.arrowSpeed` agora têm o MESMO valor (1.8) — antes
+    eram 2.6 e 1.6, dessincronizados; comentário deixado nos dois lugares
+    avisando que precisam ser mantidos iguais.
+  - `PIG.beltScale`: 1.5 -> 3; `PIG.minBeltGap` aumentado (0.55 -> 1.6)
+    para acompanhar o porco bem maior na esteira.
+  - `QUEUE.pigScale = 5` (novo); `QUEUE.laneSpacing`/`rowSpacing` alargados
+    para caber os porcos 5x maiores sem se tocarem;
+    `QUEUE.offscreenSpawnOffset` (novo, distância extra ao sul de onde um
+    porco novo nasce, fora da tela) e `QUEUE.enterDuration` (novo, duração
+    do tween de entrada andando) substituem o antigo "pop" imediato.
+  - `GRID.pillarHeight`: 0.55 -> 1.65 (3x), largura/profundidade mantidas.
+  - `TRACK.margin`: 1.7 -> 3.2 e `TRACK.width`: 0.9 -> 4.2 (esteira bem
+    mais grossa, com margem extra pra não invadir o tabuleiro).
+  - `TRACK.cornerRadius`: 1.1 -> 4.5 — precisou crescer bem mais que a
+    largura da esteira (metade de `TRACK.width` = 2.1) depois que ela
+    ficou mais grossa; com o raio antigo (1.1), o lado interno da curva
+    ficava menor que a própria largura da esteira e se auto-sobrepunha,
+    causando o efeito de "leque"/z-fighting nas imagens anexadas pelo
+    usuário — corrigido mantendo o raio confortavelmente maior que
+    `TRACK.width / 2`.
+  - `TRACK.segmentLength`: 0.5 -> 0.18 (segmentos bem mais finos, pra a
+    curva aproximar um arco de verdade em vez de ficar visivelmente
+    poligonal/faceada).
+  - `TILE.width/depth`: 0.85 -> 3.4 (4x); `TILE.height`: 0.14 -> 0.55
+    (espessura real, não mais uma placa fina); `TILE.stackGap`: 0.03 ->
+    0.22 (fichas empilhadas agora claramente separadas, dá pra contar).
+  - `TRAY.labelOffsetY`: 1.3 -> 2.2 (acompanha a pilha maior).
+- main.js:
+  - `pig.tick` (trecho "onBelt"): trocado `animatePigProcedural(...,
+    'walk', ...)` por `'idle'` — o recoil (já disparado exatamente no
+    instante de cada tiro) continua sendo a "animação de tiro" sobreposta
+    a qualquer modo, então o porco agora fica parado/idle e só reage
+    visivelmente ao atirar, como pedido.
+  - `buildTrackVisual`: o `overlap` entre segmentos da esteira deixou de
+    ser uma constante fixa (0.08) e virou proporcional ao tamanho real de
+    cada segmento (`actualSegLength * 0.35`) — com segmentos bem menores
+    agora, uma sobreposição fixa ficaria enorme relativa ao segmento e
+    deformaria cada junção; proporcional mantém o efeito de "sem costura"
+    em qualquer resolução de segmento.
+  - `tileGeo`: aumentado de 2 para 3 segmentos de arredondamento
+    (RoundedBoxGeometry) — no tamanho novo (4x maior), 2 segmentos
+    deixavam o arredondamento visivelmente poligonal.
+  - `createQueuePig`: aplica `QUEUE.pigScale` (5x) em vez de escala 1 —
+    o tween em `spawnRig` que leva à escala de esteira (`PIG.beltScale`)
+    já era genérico (usa `pigGroup.scale.x` como ponto de partida), então
+    não precisou de nenhuma mudança adicional ali.
+  - Fluxo da fila reescrito (`onPick`, `tickQueueAnimations`,
+    `spawnQueuePigFromOffscreen`, novo array `pendingQueueSpawns`):
+    - `onPick` agora só desliza (anda) os porcos atrás do escolhido para
+      preencher a lacuna, e AGENDA (não cria na hora) o porco novo com um
+      atraso igual à duração do slide (`QUEUE.slideDuration`) quando havia
+      alguém pra deslizar, ou zero quando o porco escolhido já era o
+      último da fila.
+    - `tickQueueAnimations` conta esse atraso a cada frame; ao zerar,
+      chama `spawnQueuePigFromOffscreen`, que cria o porco já posicionado
+      `QUEUE.offscreenSpawnOffset` unidades mais ao sul do seu slot final
+      (fora da área visível da câmera) e agenda um tween de entrada
+      (`QUEUE.enterDuration`) andando até a posição final — nunca aparece
+      já "no lugar".
+    - Para múltiplas seleções rápidas na mesma coluna, o índice da nova
+      linha considera também quantos spawns já estão pendentes naquela
+      coluna (`pendingQueueSpawns.filter(...).length`), evitando duas
+      entradas mirando a mesma posição.
+    - `rebuildQueue` (chamado no restart) agora também limpa
+      `slidingQueuePigs`/`pendingQueueSpawns`, pra não sobrar nenhuma
+      animação/spawn agendado apontando pra um porco já descartado.
+  - `trayLabel`: escala e offset aumentados para acompanhar a pilha 4x
+    maior.
+
+AJUSTE EMPÍRICO (build -> screenshot -> ajustar):
+- Com todos os elementos mudando de escala ao mesmo tempo (pilares 3x,
+  ficha 4x, esteira bem mais grossa, porco da fila 5x, porco da esteira
+  3x), refiz a passada completa de câmera/layout pedida — como a fórmula
+  de enquadramento já era derivada dinamicamente das dimensões reais da
+  esteira (desde o v1g), a maior parte se ajustou sozinha; só precisei
+  corrigir o raio do canto da esteira (`TRACK.cornerRadius` 1.1 -> 4.5)
+  depois de ver o defeito de "leque"/facetas exatamente como nas imagens
+  anexadas pelo usuário, confirmado com screenshot antes/depois do ajuste.
+
+TESTE:
+- npm install + npm run build: sucesso (mesmo aviso padrão de chunk size).
+- Playwright (420x860):
+  - Sem erros de console/página em nenhuma etapa (12 seleções rápidas
+    seguidas, cobrindo as 3 fileiras e as 4 colunas, sem exceções).
+  - Confirmado visualmente: esteira e setas andando na mesma velocidade
+    (mesmo valor de config, por construção); porco na esteira em pose
+    idle entre tiros, com o "chute" de recuo visível só no instante do
+    disparo; porcos da fila claramente 5x maiores e legíveis; ao escolher
+    o porco do meio (índice 1 de 3), o de trás sobe pra posição dele e só
+    depois um novo porco aparece vindo de fora da tela andando até o
+    lugar (confirmado em 3 capturas sequenciais mostrando a lacuna vazia,
+    depois o novo porco a meio caminho); porco/ficha na esteira nitidamente
+    maiores (3x/4x) e proporcionais entre si; pilha de fichas com fichas
+    visivelmente separadas e o "X/5" único, abaixo da base; canto da
+    esteira agora liso, sem o leque de linhas do defeito reportado;
+    esteira ocupando uma faixa bem mais grossa sem invadir o tabuleiro;
+    teste de estresse (12 seleções) terminou com 5/5 na esteira, munição
+    decrescendo corretamente em cada um, fila totalmente repovoada sem
+    duplicar nem sumir nenhuma posição.
+- Escrevi `ai_logs/reskin_brainstorm_prompt.txt`: um prompt pronto pra
+  colar no Gemini (ou outra IA), listando os 11 elementos visuais do jogo
+  atual (tabuleiro/pilares, esteira, setas, ficha, pilha+contador, porcos,
+  projétil+rastro, chão, luz, HUD, overlay de vitória) com a função e as
+  características de cada um, pedindo sugestões de 2-3 temas completos
+  (incluindo pirata e iceberg) cobrindo todos eles.
+
+PENDÊNCIA / PRÓXIMO PASSO:
+- Não retestei o caso de picar a última linha da fila (índice 2 de 3) —
+  a lógica é genérica (funciona pra qualquer `rowIndex`), mas vale uma
+  checagem visual dedicada se o usuário notar algo estranho especificamente
+  nesse caso.
+- Com o raio de canto bem maior (4.5) a curva relativa ao tamanho do
+  tabuleiro mudou de proporção — vale um olhar geral se o formato do loop
+  ainda lembra o do vídeo de referência, ou se quer um raio menor/maior.
+- Como sempre, nenhuma mudança nesta rodada tocou no modelo do porco em si
+  (continua sem esqueleto, animação procedural) — só na escala em que ele
+  é exibido em cada contexto.

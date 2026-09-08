@@ -1,0 +1,120 @@
+v1l — Proporção geral, fila de tiles horizontal e separação de velocidade (esteira x setas)
+============================================================================================
+
+Feedback recebido (verbatim, resumido aqui para contexto — a mensagem original tinha 2
+imagens: imagem 1 = screenshot do build v1k atual mostrando os porcos da fila
+encostando/passando por cima dos slots tracejados e a fila de tiles em diagonal; imagem 2 =
+referência de layout mais "quadrado", com esteira mais fina, grade maior e porcos da fila bem
+maiores):
+
+1. Porcos da fila ainda maiores; separação no eixo Y entre filas igual/similar à separação no
+   eixo X entre colunas; porcos da fila NUNCA devem ultrapassar a área dos slots tracejados
+   quando parados.
+2. Tiles devem ficar alinhados horizontalmente (face virada para a direita, costas para a
+   esquerda), formando uma fila da esquerda para a direita — não mais na diagonal/vertical
+   como estava. O "5/5" deve ficar maior e abaixo dessa fila.
+3. Esteira ~10-20% mais fina, usando o espaço liberado para aumentar a grade xadrez. Espaço
+   entre a esteira e a borda da tela (direita e topo, como exemplo) dividido pela metade.
+   Proporção geral igual/semelhante à imagem 2.
+4. Setas sempre atrás/abaixo do porco e do tile (que andam por cima da esteira). Setas mais
+   lentas e suaves; objetos na esteira (porco+tile) ainda mais rápidos.
+
+O que foi feito
+----------------
+
+QUEUE (fila de seleção):
+- `pigScale` subiu de 3.2 para 4.4 — porcos visivelmente maiores de novo, como pedido.
+- `laneSpacing` (eixo X, entre colunas) subiu de 3.1 para 4.2, para dar espaço aos porcos
+  maiores sem encostar um no outro.
+- `rowSpacing` (eixo Z, entre filas norte-sul) foi DRASTICAMENTE reduzido, de 10.4 para 5.2.
+  Isso pode parecer contraintuitivo à primeira vista, mas é o resultado direto de medir a tela
+  de novo: passes anteriores assumiam que a câmera isométrica comprime MUITO mais o eixo Z do
+  que o X, e por isso mantinham `rowSpacing` várias vezes maior que `laneSpacing`. Ao medir em
+  pixels via screenshot desta vez, ficou claro que essa suposição estava exagerada — nesse
+  ângulo de câmera os dois eixos comprimem de forma parecida. Um `rowSpacing` próximo de
+  `laneSpacing` foi o que realmente produziu um espaçamento visualmente parecido entre filas e
+  colunas, exatamente o que foi pedido. Efeito colateral bom: isso também liberou espaço
+  vertical suficiente para as 3 filas visíveis caberem confortavelmente na tela, com a fila 2
+  terminando perto da borda inferior (era um pedido de passes anteriores que não tinha mais
+  espaço sobrando com os valores antigos).
+- `areaOffsetZ` subiu de 12.5 para 16 — parte para acompanhar os porcos maiores, parte para
+  compensar a mudança de câmera (ver abaixo): como o ajuste de câmera empurra a cena inteira
+  para cima na tela, a fila (que é um elemento 3D, ao contrário do quadro tracejado que é um
+  `<div>` HTML fixo) precisou ser empurrada mais para o mundo em Z só para manter a MESMA
+  posição relativa na tela — ou seja, continuar nunca encostando nos slots tracejados.
+
+TILE STACK (pilha de fichas):
+- `stackRowDir` (main.js) mudou de uma direção tangencial diagonal para um eixo mundial +X
+  puro — a fila agora corre da esquerda para a direita na tela, como pedido, ao invés de
+  cortar a tela na diagonal.
+- Um detalhe que só apareceu depois de testar: com a fila 100% no eixo X e ZERO variação de
+  profundidade entre os tiles, os 5 tiles (que já se sobrepõem parcialmente, tipo leque de
+  cartas) ficaram parecendo UMA ÚNICA peça sólida, sem separação visível nenhuma — confirmado
+  via screenshot com zoom. Isso porque antes a direção diagonal também deslocava cada tile em
+  Z, criando uma pista de profundidade que ajudava o olho a separar cada peça; ao tirar esse
+  deslocamento em Z, a separação sumiu. A correção foi reintroduzir um deslocamento em
+  profundidade BEM pequeno por tile (`STACK_ROW_DEPTH_STAGGER = 0.05`, quase imperceptível
+  isoladamente) e também abrir um pouco mais o espaçamento no X (`STACK_ROW_STEP` de 0.42 para
+  0.56 do width do tile) — o resultado é uma fila que continua lendo como claramente horizontal
+  (esquerda→direita), mas com os 5 tiles de novo individualmente contáveis.
+- Não foi necessário girar a orientação 3D do tile em si (a face continua com a mesma
+  orientação de antes) — a mudança pedida ("face virada para a direita") foi entendida, na
+  prática, como a DIREÇÃO DA FILA na tela (horizontal ao invés de diagonal/vertical), e não
+  como uma rotação adicional do modelo 3D do tile. Cheguei a tentar girar o tile 90° em Y para
+  apontar a face "normal" para o eixo X — mas como a câmera não tem nenhum deslocamento lateral
+  em X (fica centrada em X=0), qualquer face cujo vetor normal aponte exatamente para X fica de
+  "cantina" (canto morto) para essa câmera, ou seja, invisível/quase invisível — foi essa
+  tentativa, na verdade, que causou o bug do "bloco sólido" acima, e revertê-la (mantendo só a
+  rotação de "em pé", como já era) resolveu o problema.
+- O label "5/5" ficou maior (`TRAY_LABEL_WIDTH` de 1.5x para 2.1x o width do tile) e foi
+  recentralizado embaixo da fila usando um deslocamento puro no eixo mundial +Z (sul) em vez do
+  antigo `gapRadiusDir` (que tem um componente em X e por isso puxava o label para o lado,
+  descentralizando-o da fila).
+
+ESTEIRA E CÂMERA:
+- `TRACK.width` reduzido de 4.3 para 3.6 (~16%, dentro da faixa pedida de 10-20%).
+- Margem entre a esteira e a borda da tela: o termo de padding usado no cálculo da largura da
+  câmera ortográfica (`ORTHO_VIEW_WIDTH`) caiu de 0.8 para 0.4 — cortado pela metade, como
+  pedido. Como a câmera é centralizada em X=0 e a esteira é simétrica, esse corte se aplica
+  igualmente aos dois lados (esquerda e direita) de uma vez só.
+- Margem no topo: aqui a mecânica é diferente — não existe um termo isolado de "padding
+  vertical" como no eixo horizontal, o enquadramento vertical vem do alvo do `camera.lookAt`.
+  Medi a margem no topo antes e depois via screenshot (contando pixels até o primeiro pixel do
+  quadriculado) e ajustei o multiplicador do `lookAt` (de 1.05x para 1.45x) até a margem cair
+  para aproximadamente metade do valor original. Efeito colateral importante, documentado no
+  código: esse ajuste desloca a cena INTEIRA para cima na tela igualmente (é uma câmera
+  ortográfica, então é uma translação pura), incluindo a fila de seleção — por isso
+  `QUEUE.areaOffsetZ` teve que subir também, só para a fila continuar na mesma posição relativa
+  aos slots tracejados (ver acima).
+- O resultado final (visualmente conferido) aproxima bastante a proporção pedida na imagem 2:
+  esteira mais fina, grade bem maior ocupando quase toda a largura/altura disponível, cantos
+  menos "sobrando".
+
+VELOCIDADE (esteira x setas):
+- `PIG.speed` e `TRACK.arrowSpeed` estavam amarrados 1:1 desde o v1h ("MUST match exactly, same
+  surface, same speed"). Esse pass quebra essa regra de propósito, como pedido: `PIG.speed`
+  subiu de 6.5 para 8.5 (o porco+tile andando mais rápido) e `TRACK.arrowSpeed` caiu de 6.5
+  para 4.2 (as setas mais lentas e suaves). Testado via clique real na fila + screenshots
+  sequenciais: o porco visivelmente avança bem mais rápido pela esteira a cada captura.
+- Sobre "setas sempre abaixo do porco e do tile": investiguei o código de renderização antes de
+  mexer em qualquer coisa. As setas ficam em Y ≈ 0.24 (topo da esteira) enquanto o porco+tile
+  andam em Y ≈ 0.54 (`BELT_RIDE_HEIGHT`) — uma diferença de altura real, não só visual — e
+  nenhum dos dois materiais desativa o teste de profundidade (`depthTest`) do WebGL. Isso
+  significa que a oclusão correta (o objeto mais alto tampando o mais baixo) já deveria
+  acontecer automaticamente via z-buffer, independente de `renderOrder`. Não encontrei nenhum
+  frame nos testes onde uma seta aparecesse por cima do porco/tile. Minha leitura é que o
+  incômodo relatado provavelmente vinha da COINCIDÊNCIA de posição/velocidade — como antes as
+  setas e o porco andavam exatamente na mesma velocidade, era comum os dois ficarem grudados
+  visualmente por um tempo, dando a impressão de "estarem na mesma camada" mesmo com a
+  hierarquia de profundidade correta. Com a nova separação de velocidade (setas mais lentas,
+  porco mais rápido), esse encontro prolongado deixa de acontecer, o que por si só já deve
+  resolver a sensação relatada. Não fiz nenhuma mudança adicional de render order — se depois de
+  testar no dispositivo real o problema persistir mesmo com as setas visivelmente mais lentas,
+  vale reportar com um screenshot do momento exato, porque nesse caso seria bom investigar mais
+  a fundo (possivelmente um bug de precisão do z-buffer nesse ângulo de câmera específico, o
+  que seria mais raro).
+
+Testado via `npm run build` + Playwright (viewport 420x747, a proporção real do #game-frame do
+jogo) + screenshots com zoom, incluindo um teste de clique real na fila (não só inspeção
+visual) para confirmar que o pick continua funcionando com o novo layout — lembrete do bug do
+v1k que só apareceu em testes de clique de verdade, não em screenshots.

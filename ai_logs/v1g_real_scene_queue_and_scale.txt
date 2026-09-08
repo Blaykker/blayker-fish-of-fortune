@@ -1,0 +1,183 @@
+[SESSION] Queue moved into the real 3D scene, drag-and-drop pig reuse,
+InstancedMesh grid/belt for a 13x13 board, shader-wipe arrows, brighter
+lighting
+[DATA] 2026-09-07
+
+CONTEXTO:
+O usuário anexou 1 imagem (esteira contornada em branco, com uma linha
+verde marcando o início do trecho de esteira e uma vermelha marcando o
+fim/o vão) e descreveu, por texto (mensagem de voz longa), uma leva grande
+de correções sobre a fila, os slots selecionados, a hierarquia da cena, o
+vão da esteira, escala do porco, iluminação, transição das setas,
+espaçamento do HUD e o tamanho do tabuleiro.
+
+PEDIDOS (lista):
+1. Número de munição do porco branco na esteira tinha uma borda branca
+   visível — queria o número completamente preto, sem nenhuma borda.
+2. Slots de "porco selecionado" e fila: o quadrado de bordas arredondadas
+   estava confinando/recortando o modelo 3D do porco — queria o quadrado
+   POR TRÁS do modelo, não ao redor dele.
+3. Fila: queria que fosse o modelo 3D de verdade, dentro da cena principal
+   (não mais um mini-viewport separado), projetando sombra real da luz
+   global, só com o número de tiros como texto sobre o porco (sem
+   card/círculo nesse caso, já que agora é "cena normal").
+4. Orientação/mecânica da fila esclarecida: a fila anda de sul para norte;
+   os porcos olham para o norte (para a esteira); ao selecionar um porco,
+   ele vai DIRETO da fila para a esteira via uma animação estilo "drag and
+   drop" — a ficha anima até a esteira e o porco vai diretamente para cima
+   dela (mesma instância, não um modelo novo).
+5. Hierarquia explícita da cena: chão -> esteira -> (acima) setas de
+   direção -> ficha + porco; os tiros do porco operam na altura do porco,
+   acertando pilares que ficam no chão.
+6. Vão da esteira (imagem anexada, linha verde = início, vermelha = fim):
+   NÃO queria nenhum bloco 3D ali — queria a ausência literal de trilho
+   nessa região. As fichas empilhadas ficam no CENTRO dessa região, e o
+   contador "5/5" deve ficar ABAIXO da base da ficha mais próxima do chão
+   (não acima da pilha como antes).
+7. Porcos montados na esteira 50% maiores, para melhor legibilidade.
+8. Iluminação global mais forte, cena "ligeiramente mais clara" —
+   explicitamente como preparação para a paleta clara/vibrante de praia
+   tropical (areia, água, madeira boiando) da fase de estilo.
+9. Setas da esteira não devem sumir instantaneamente no fim nem aparecer
+   instantaneamente no início — devem sumir progressivamente "da ponta ao
+   final da seta", como entrando numa máscara, e aparecer da mesma forma
+   (revelando progressivamente), com transição suave, não um corte firme.
+10. Mais espaçamento entre os 5 slots de porco selecionado.
+11. Reforçado: porcos da fila devem projetar sombra da luz global.
+12. Mecânica de preenchimento da fila: ao escolher um porco, todos atrás
+    dele (mais ao sul) andam para o norte para preencher a lacuna; um novo
+    porco aparece no final (sul). Exemplo dado: escolhendo o porco do meio
+    (posição 2 de 3), o porco 3 anda para a posição 2, e um novo porco
+    aparece na posição 3.
+13. Grid do tabuleiro: 13x13 células (cada uma com 4 mini pilares
+    intercalados), em vez de 6x8.
+
+MUDANÇAS DE CÓDIGO:
+- config.js: `GRID.cellsX/cellsY = 13`; `QUEUE` ganhou `laneSpacing`,
+  `rowSpacing`, `areaOffsetZ` (posição da fila no mundo real, ao sul da
+  esteira) e `flightDuration`; `PIG.beltScale = 1.5` (porco 50% maior na
+  esteira), `PIG.inwardOffset` continua 0 (fila não precisa de offset —
+  o -Z local do porco já aponta pro norte); `TRACK` ganhou
+  `segmentLength` (tamanho de cada "prancha" instanciada do trilho) e
+  `arrowFadeZone` (distância da transição de máscara das setas);
+  `SELECTED_SLOTS.gapPercent` novo (espaçamento maior); `LIGHTING`
+  (`sunIntensity`, `ambientIntensity`, `sunColor`) e `COLORS`
+  (`background`/`floor`/`track`) mais claros.
+- main.js — mudanças estruturais grandes:
+  - Grid de pilares: convertido para 2 `THREE.InstancedMesh` (um por cor)
+    em vez de uma malha por pilar — necessário para o tabuleiro 13x13
+    (até 676 pilares) continuar barato. "Destruir" um pilar agora só move
+    a matriz daquela instância pra um transform escondido/degenerado
+    (`HIDDEN_MATRIX`) em vez de remover um mesh da cena. A forma externa
+    do array `pillars` (`{mesh, instanceId, color, alive, position}`) foi
+    mantida igual de propósito, então `hasClearLine`/`findShootablePillar`/
+    `alivePillars` não precisaram mudar.
+  - Trilho da esteira: trocado o `ExtrudeGeometry` com furo (e o antigo
+    bloco "máscara" da cor do chão sobre o vão) por um único
+    `InstancedMesh` de segmentos ("pranchas") amostrados só ao longo do
+    trecho VISÍVEL do caminho (`GREEN_ZONE_DIST` a `RED_ZONE_DIST`,
+    calculados a partir da imagem de referência com as linhas verde/
+    vermelha) — o arco do canto de entrada simplesmente nunca é
+    construído, então o vão é ausência real de geometria, não um "disfarce"
+    pintado por cima.
+  - Setas com wipe suave: `ShaderMaterial` customizado — o vertex shader
+    passa a posição local X como varying; o fragment shader descarta
+    fragmentos comparando essa posição com um uniform `uThreshold`, cuja
+    direção de comparação depende de `uMode` (0 = revelando, 1 =
+    escondendo). `uThreshold` varre de `ARROW_TIP_X` a `ARROW_TAIL_X` ao
+    longo de `TRACK.arrowFadeZone` perto dos dois limites do vão,
+    produzindo o efeito "da ponta ao final da seta" pedido, em vez de um
+    pop instantâneo. Confirmado visualmente via screenshots: uma seta
+    perto do limite do vão aparece parcialmente cortada (um trapézio em
+    vez do triângulo completo), exatamente o efeito de máscara esperado.
+  - Altura de "andar na esteira": nova constante `BELT_RIDE_HEIGHT =
+    TRACK.height + TRACK.rideClearance + TILE.height/2`, respeitando a
+    hierarquia chão < esteira < seta < ficha/porco pedida explicitamente.
+  - Fila movida para a cena real: `createQueuePig` cria um `buildPigMesh`
+    de verdade, posicionado via `queueSlotPosition(colIndex, rowIndex)`
+    (linha 0 = mais ao norte/perto da esteira; índice crescente = mais ao
+    sul). Como o -Z local do porco já aponta pro "norte" (mesma convenção
+    de tela usada desde o v1e), nenhuma rotação extra é necessária pros
+    porcos da fila olharem pra cima. Clique agora é via
+    `THREE.Raycaster` contra os grupos reais da fila (substituindo o
+    listener de clique em elemento DOM do v1f) — sobe por `.parent` até
+    achar o objeto com `userData.isQueuePig` e lê `userData.queueRef`.
+  - Deslizamento da fila: `slidingQueuePigs` anima posições reais de
+    `THREE.Group` (em vez da técnica FLIP em CSS/DOM do v1f, que não se
+    aplica mais já que não existe elemento DOM por porco da fila).
+  - "Drag and drop": `spawnRig` agora RECEBE a instância real do porco que
+    estava na fila (em vez de construir um modelo novo) — anima essa
+    instância perseguindo a posição ao vivo da ficha a cada frame
+    (`lerpVectors` + um arco vertical leve de arremesso), crescendo de
+    escala de fila até `PIG.beltScale`, e só reparenta do `scene`
+    top-level pro grupo `rig` quando o tween termina. O sprite de munição
+    também é reaproveitado (`pigGroup.userData.ammoSprite`), não duplicado.
+  - Pilha de fichas: ancorada no ponto médio exato do arco do vão de
+    entrada (`entryGapEdge = beltEdges[0]`), no nível do chão; label
+    "X/5" reposicionado para ficar ABAIXO da base da pilha.
+  - Câmera: `ORTHO_VIEW_WIDTH`/posição/`lookAt` agora derivados
+    dinamicamente das dimensões reais da esteira (`beltHalfW`/
+    `beltHalfH`), em vez de uma constante fixa que só funcionava pro
+    tabuleiro 6x8 antigo — necessário pro tabuleiro 13x13 caber no frame.
+  - Munição sem NENHUMA borda: `drawAmmoCanvas` agora desenha só um fill
+    sólido (preto pro porco branco, branco pro porco preto), sem stroke
+    nenhum — corrigindo o resíduo de borda branca que ainda aparecia no
+    número do porco branco na esteira.
+  - Iluminação e paleta: `LIGHTING.ambientIntensity` 0.5->0.85,
+    `sunIntensity` 1.1->1.75, `sunColor` mais quente/claro; `COLORS`
+    (fundo/chão/trilho) levemente mais claros.
+- index.html: removida toda a estrutura morta de `#queue`/`.lane`/
+  `.queue-pig`/`.ammo-text` (a fila não usa mais nenhum elemento DOM,
+  só raycasting na cena real); `#selected-slots` reposicionado logo
+  abaixo do "X/5 on belt" com `gap: 6%` (era 2.5%) para o espaçamento
+  maior pedido.
+
+AJUSTE EMPÍRICO DE CÂMERA (build -> screenshot -> ajustar, como sempre):
+- Primeira tentativa de posicionamento da fila (`QUEUE.areaOffsetZ = 2.4`,
+  herdado do v1f) deixou os porcos da fila aparecendo ACIMA da linha de
+  slots selecionados (sobrepondo o "X/5 on belt") — já que a fila virou
+  objeto real de cena, sua posição na tela passou a depender da projeção
+  da câmera, não mais de CSS. Ajustei `QUEUE.areaOffsetZ` e
+  `QUEUE.rowSpacing` em 3 rodadas de build+screenshot (2.4 -> 5.6 -> 16 ->
+  valor final 13.3, e `rowSpacing` 1.5 -> 1.9 -> 3.2 -> valor final 2.6)
+  até a fila ficar visivelmente ABAIXO dos slots selecionados e as 3
+  fileiras caberem inteiras dentro do frame vertical sem cortar a
+  terceira fileira (mais ao sul) na borda inferior.
+
+TESTE:
+- npm install + npm run build: sucesso (sem warnings além do aviso padrão
+  de chunk size do Vite).
+- Playwright (420x860):
+  - Sem erros de console/página em nenhuma etapa (só o 404 de favicon,
+    irrelevante, filtrado nos testes).
+  - Confirmado visualmente: tabuleiro 13x13 renderiza corretamente e sem
+    perda perceptível de fps; vão da esteira sem NENHUM bloco 3D, com a
+    pilha de fichas centrada nele e o "5/5" abaixo da base da pilha;
+    porcos da fila são modelos 3D reais na cena principal, abaixo da
+    linha de slots selecionados; clique via raycasting funciona (testado
+    ~10 seleções rápidas em sequência, incluindo cliques na mesma
+    coluna); ao selecionar, a mesma instância do porco voa até a esteira
+    e pousa sobre a ficha (não aparece um modelo duplicado); porco na
+    esteira aparece maior (50%); número de munição sem nenhuma borda
+    (testado no porco preto — branco sólido sem contorno); setas da
+    esteira mostram claramente o corte parcial (trapézio) característico
+    do wipe perto do limite do vão, em vez de sumir/aparecer de repente;
+    cena geral está visivelmente mais clara; HUD de slots selecionados
+    com espaçamento maior e preenchendo corretamente com munição ao vivo
+    conforme os porcos entram na esteira; "5/5 on belt" com todos os 5
+    slots preenchidos após seleção repetida, porcos mantendo espaçamento
+    mínimo sem se sobrepor.
+
+PENDÊNCIA / PRÓXIMO PASSO:
+- Não testei visualmente o comportamento das setas no exato instante da
+  transição de sumiço completo->reaparecimento (só capturei quadros que
+  mostram o corte parcial em progresso) — o efeito parece correto pela
+  lógica do shader e pelos quadros capturados, mas uma checagem mais
+  demorada (gravar vários segundos) daria mais confiança.
+- A pilha de fichas e o rótulo "X/5" usam a mesma geometria/posição desde
+  o v1e/v1f, só reancorados — não retestei o comportamento dela A pilha
+  esvaziando/enchendo conforme fichas saem/voltam da esteira além do teste
+  de estresse já feito.
+- Como sempre, o modelo do porco continua sem esqueleto (animação toda
+  procedural) — sem mudança nesta rodada, mas vale lembrar caso o v3
+  peça mais nuance de animação.

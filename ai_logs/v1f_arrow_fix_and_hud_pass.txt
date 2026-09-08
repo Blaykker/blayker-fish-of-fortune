@@ -1,0 +1,148 @@
+[SESSION] Belt-arrow bugfix, HUD/queue polish, procedural pig animation, sun light
+[DATA] 2026-09-07
+
+CONTEXTO:
+O usuário anexou 1 imagem (screenshot do estado atual com a área da esteira
+contornada em branco, mostrando o espaço vazio onde a pilha de fichas deve
+ficar) e descreveu, por texto, uma leva grande de ajustes de HUD, animação
+e correção de bugs visuais.
+
+PEDIDOS (lista):
+1. Rastro do tiro: trocar as partículas por uma "cauda" única que afina até
+   a ponta (efeito cometa), não um rastro feito de bolinhas.
+2. Fila de porquinhos: sumir com o quadrado preto atrás do modelo 3D
+   (defeito de fundo do mini-viewport); modelo maior; animações de andar,
+   atirar e idle.
+3. Fluxo de seleção: o porco escolhido vai direto da fila para a esteira;
+   os porcos atrás dele na mesma fila (mais ao sul/embaixo na tela) andam
+   pra frente (norte) até preencher a lacuna, tocando a animação de andar;
+   um novo porco aparece no final da fila (a posição mais ao sul).
+4. Área exata da esteira (imagem 1): vão vazio no canto onde ficam as
+   fichas empilhadas — fichas na cor BRANCA.
+5. Não esquecer os 5 slots de "porcos selecionados" (aparecem quando o
+   porco chega na esteira) — entre a esteira e a fila.
+6. Número de munição sem círculo — só o número em cima do modelo, branco
+   pro porco preto e preto pro porco branco (fila, selecionados e esteira).
+7. Espaçamento mínimo entre porcos na esteira (não podem se encostar).
+8. Setas da esteira com direção errada — mapeamento explícito pedido:
+   face inferior aponta pra direita, direita aponta pra cima, superior
+   aponta pra esquerda, esquerda aponta pra baixo, girando suavemente nas
+   curvas; e "marquinhas do trilho" para reforçar a ilusão de movimento.
+9. Bloco da esteira todo na parte superior da tela; entre esteira e fila
+   fica a linha de slots dos porcos selecionados.
+10. Luz global fixa vindo da direita, tipo sol de 15h-17h, leve, só para
+    dar sombra projetada perceptível nos modelos/elementos 3D.
+
+MUDANÇAS DE CÓDIGO:
+- BUG REAL DAS SETAS (a causa raiz, não só "precisão nas curvas" como eu
+  suspeitava no log anterior): `makeArrowMesh()` setava
+  `mesh.rotation.x = -Math.PI/2` (pra deitar a seta no chão) E, todo
+  frame, `mesh.rotation.y` (pra guiar a direção) — NO MESMO Object3D.
+  Combinar dois eixos do mesmo Euler no three.js NÃO é equivalente a
+  "deita e depois gira em torno do eixo vertical do mundo": escrevi um
+  script isolado (fora do projeto, só pra investigar) que instancia o
+  mesmo Object3D e lê a direção resultante no mundo — confirmou que a
+  seta saía do plano do chão assim que `rotation.y` != 0, o que
+  explicava a "curva errada" mesmo a tangente estando matematicamente
+  certa. Corrigido definitivamente: a rotação de "deitar" agora é
+  assada na GEOMETRIA (`geo.rotateX(-Math.PI/2)`), e o objeto ao vivo só
+  encosta em `rotation.y` dali em diante — um Euler de eixo único, sem
+  ambiguidade. Rederivei a fórmula de conversão direção->ângulo
+  (`headingFromTangent`) a partir do zero conferindo contra os 4 lados
+  retos pedidos pelo usuário (inferior->direita, direita->cima,
+  superior->esquerda, esquerda->baixo) e cheguei em
+  `atan2(-dz, dx)` — bem mais simples que a fórmula anterior, e
+  confirmada correta nos 4 casos.
+  - Como o offset fixo do porco (`PIG.inwardOffset`) dependia da mesma
+    convenção de ângulo, precisei re-derivar ele também: com a fórmula
+    nova, a própria orientação da ficha já aponta pro centro — o offset
+    caiu pra 0 (documentado em config.js com a explicação).
+- config.js: `PIG.inwardOffset` agora 0 (era -90°, ver acima);
+  `PIG.projectileTrailLength`, `PIG.minBeltGap` novos; `TILE.colorEmpty`
+  virou branco; `QUEUE.displayScale` maior + `QUEUE.slideDuration`;
+  blocos novos `SELECTED_SLOTS` e `LIGHTING` (cor/posição/intensidade do
+  sol, tamanho do shadow map).
+- main.js:
+  - Luz: trocada a luz direcional genérica por um "sol" fixo
+    (`LIGHTING`), vindo da direita, com `castShadow` ligado só nele +
+    shadow map pequeno (1024) e frustum de sombra recortado exatamente
+    no tamanho do tabuleiro — chão, pilares, fichas (pilha e em uso) e
+    porcos marcados como `castShadow`/`receiveShadow`; esteira/setas/HUD
+    ficam de fora do cálculo de sombra de propósito (mantém leve).
+  - Câmera: `lookAt` empurrado mais pra +Z (`(0,0,4.4)`, era `(0,0,1.5)`)
+    pra concentrar o bloco esteira+tabuleiro na parte de cima da tela.
+  - Animação procedural do porco: `buildPigMesh` agora expõe
+    `group.userData.parts` (corpo, orelhas, focinho, pernas — pernas
+    viraram grupos com pivô no quadril, não cilindros soltos, pra poder
+    "andar" de verdade); `animatePigProcedural(pigGroup, t, modo, recoil)`
+    aplica um ciclo de perna + bob de corpo no modo 'walk', um bob +
+    tremor de orelha suave no modo 'idle', e um "chute" rápido de recuo
+    (`recoil`) sobreposto em qualquer modo, disparado a cada tiro e
+    decaindo em ~0.2s. Os porcos na esteira estão SEMPRE em modo 'walk'
+    (a ficha nunca para de verdade); os da fila alternam idle/walk
+    conforme estão parados ou deslizando pra preencher uma lacuna.
+  - Fila: `onPick` agora captura os retângulos (`getBoundingClientRect`)
+    dos porcos da coluna ANTES de mutar o array, re-renderiza só aquela
+    coluna, e usa a técnica FLIP (`slideLaneIntoPlace`) pra animar os
+    sobreviventes deslizando pra a posição nova em vez de simplesmente
+    "pularem" — cada um marcado com um `data-walkUntil` (timestamp) que o
+    renderizador de thumbnail usa pra saber se deve tocar a animação de
+    andar durante a janela do slide.
+  - Fundo preto nos mini-viewports: a `queueScene` (usada tanto pela fila
+    quanto pelos slots selecionados) não tinha `background` definido, e
+    caía no preto puro por padrão — bastou `queueScene.background = new
+    THREE.Color(COLORS.background)` pra combinar com o resto do jogo.
+  - Slots selecionados: `SELECTED_SLOTS`/`beltTokens` viraram uma segunda
+    fonte pro mesmo mecanismo de thumbnail (`renderPigThumbnail`,
+    generalizado a partir do código da fila) — 5 `.slot` no HTML, vazios
+    (borda tracejada) por padrão, preenchidos com o modelo 3D + munição
+    ao vivo do porco correspondente assim que ele entra na esteira.
+  - Munição sem círculo: `drawAmmoCanvas` não desenha mais fundo/borda —
+    só o número, com contorno fino na cor oposta pra legibilidade; a
+    fila e os slots selecionados usam a mesma convenção via elementos
+    `.ammo-text.on-white` / `.on-black` no HTML/CSS.
+  - Espaçamento mínimo: `enforceBeltSpacing()` roda depois do tick de
+    todos os porcos — ordena os que já estão na esteira por distância e
+    prende a posição de cada um a pelo menos `PIG.minBeltGap` atrás do
+    porco imediatamente à frente.
+  - Rastro do tiro: trocado o pool de partículas por UM único
+    `ConeGeometry` por projétil (base larga na posição atual, ponta
+    afinando pra trás, orientado a cada frame pela velocidade real do
+    projétil via `quaternion.setFromUnitVectors`) — mais barato (1 mesh
+    por tiro, atualizado, em vez de várias esferas sendo criadas e
+    destruídas) e visualmente é exatamente a "cauda afinando até a
+    ponta" pedida.
+- index.html: nova `#selected-slots` (5 `.slot`), `.ammo-text` sem
+  círculo, `.queue-pig` maior (62px), reposicionamento dos blocos de HUD
+  (`capacity-pill` em 41%, `selected-slots` em 27%, `queue` embaixo) pra
+  abrir espaço pro bloco da esteira ficar em cima.
+
+TESTE:
+- npm install + npm run build: sucesso.
+- Playwright (420x860): sem erros de console/página depois de 25 seleções
+  rápidas seguidas + ~10s de jogo simultâneo com 3+ porcos ativos (só o
+  404 de favicon, irrelevante).
+- Confirmei visualmente nos screenshots: setas corretas nos 4 lados
+  (inferior->direita, direita->cima, superior->esquerda, esquerda->baixo,
+  exatamente como pedido); rastro do tiro com cauda afinando de verdade
+  (não mais bolinhas); sombra suave visível sob porcos/pilares vindo de
+  um lado só; fila sem quadrado preto atrás do modelo, número de munição
+  sem círculo e com a cor certa por lado; slots selecionados aparecendo
+  com o modelo 3D + munição ao vivo assim que um porco entra na esteira;
+  esteira/tabuleiro ocupando a parte de cima da tela.
+
+PENDÊNCIA / PRÓXIMO PASSO:
+- A animação "de andar" da fila só é visivelmente perceptível durante a
+  pequena janela do slide FLIP (~0.22s) — dá pra perceber o ciclo de
+  perna, mas é rápido; se quiser mais tempo de leitura da animação, dá
+  pra alongar `QUEUE.slideDuration` sem custo nenhum.
+- O modelo do porco continua primitivo (sem esqueleto) — as animações são
+  todas proceduais (seno + pivôs), o que é rápido e leve, mas terá um
+  teto de expressividade; se o v3/polish pedir mais nuance de animação
+  (ex.: antecipação antes do tiro, follow-through depois), dá pra
+  evoluir os mesmos pivôs sem precisar reescrever o modelo.
+- Não implementei "marquinhas do trilho" como um elemento visual
+  SEPARADO das setas — as próprias setas, agora corrigidas e cruzando
+  suavemente as curvas, já cumprem o papel de reforçar a ilusão de
+  movimento; se o usuário quiser marcas adicionais (tipo hachuras/
+  segmentação no chão da esteira), é um acréscimo pontual.
