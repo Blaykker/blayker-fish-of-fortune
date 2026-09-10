@@ -1,0 +1,117 @@
+styled_fof_version — v2f: espuma por topologia (fora o depth-test do
+tutorial), vida marinha, esponjas em tubo, pinguim do concept sheet
+============================================================================
+
+Contexto: passe grande, com feedback em muitas frentes. O item mais
+importante é conceitual e vale registrar primeiro.
+
+O ERRO DE MODELO: A ESPUMA DE CONTATO NUNCA FOI UM PROBLEMA DE PROFUNDIDADE
+-----------------------------------------------------------------------------
+O tutorial calcula a espuma de contato comparando a profundidade da água
+com o depth buffer. Isso responde à pergunta "existe geometria logo atrás
+deste pixel?" — e essa NÃO é a pergunta que a arte faz. A pergunta certa é
+"este objeto encosta na linha d'água?", e as duas divergem exatamente no
+caso que o cliente apontou: uma pilha de 5 boias tem 5 objetos com
+geometria logo atrás, mas só UMA delas está na água. O teste de
+profundidade contornava as cinco.
+
+Como o teste roda em espaço de tela e a meia resolução, ele ainda por cima
+serrilhava — daí o "está pixelizado".
+
+A correção não é ajustar o raio nem a distância: é trocar o modelo. A
+espuma de contato agora é GEOMETRIA colocada nas coisas que de fato
+flutuam, exatamente como as imagens de topologia do cliente declaram —
+o casco do barco, a boia de baixo da pilha, cada boia que anda na esteira,
+e o bloco de recife. Topologia declarada em vez de inferida. E como é um
+quad com textura de borda suave, o serrilhado some de graça: uma textura
+borrada não tem degraus, um threshold em espaço de tela sempre vai ter.
+
+Detalhe de forma: são DUAS texturas de faixa, redonda e retangular
+arredondada, porque as coisas que flutuam têm duas formas. Um anel circular
+esticado sobre um casco retangular amontoa nos cantos e deixa as laterais
+longas sem espuma. E a faixa é desenhada como TRAÇO ao longo da silhueta,
+não como gradiente radial: a primeira tentativa usou gradiente e leu como
+brilho em volta do objeto, porque espuma tem borda interna e gradiente não
+tem.
+
+MOVIMENTO MAIS ORGÂNICO
+-------------------------
+Dois warps em frequências e velocidades diferentes, em vez de um. Um warp
+só desliza o campo inteiro rigidamente e lê mecânico; dois que discordam
+fazem as células esticarem e relaxarem enquanto derivam.
+
+ESPUMA COM VARIAÇÃO INTERNA
+-----------------------------
+A espuma deixou de ser um branco chapado: uma segunda amostra, muito maior
+e mais lenta, sombreia o INTERIOR de cada faixa entre um branco frio e o
+branco puro. Sem isso a rede lê como adesivo colado por cima da água.
+
+VIDA MARINHA
+--------------
+Cardumes cruzando por baixo da água, com tubarão ocasional e baleia rara.
+Vale o custo porque é o argumento mais forte que a cena tem de que a água é
+TRANSPARENTE: um padrão de cáustico diz "superfície", mas algo se movendo
+POR BAIXO da superfície, tingido por ela, é o que torna a profundidade
+legível como profundidade. Nadam entre o leito e o filme d'água, então o
+próprio shader os tinge — nenhum tratamento por peixe foi preciso.
+Os grandes passam fundo e lentos; os peixes pequenos mais altos na coluna,
+para as duas escalas lerem em profundidades diferentes em vez de virarem
+uma camada só de coisas.
+
+PARALAXE DO REFLEXO NA AREIA
+------------------------------
+Duas folhas de cáustico em alturas, escalas e velocidades diferentes. Com
+uma só, a luz desliza pelo leito como decalque, e nenhum ajuste de
+velocidade conserta isso — um plano sozinho não tem profundidade para
+entregar. A camada do fundo também foi refeita: manchas grandes e bem
+borradas em vez de bordas nítidas de Worley, porque luz que atravessou
+alguns palmos de água chega borrada, e desenhar essa camada tão afiada
+quanto a da superfície foi o que fez um passe anterior ler como duas redes
+brigando empilhadas.
+
+ESPONJAS EM TUBO (foto de referência do cliente)
+--------------------------------------------------
+Quatro tubos ocos por célula. A boca aberta em cima é a leitura inteira de
+uma esponja-tubo — um blob sólido nunca ia dizer "esponja", por mais que
+fosse recolorido. Cada tubo é UMA `LatheGeometry`: o perfil sobe a parede
+externa, atravessa o aro, desce a parede interna e fecha no fundo do furo,
+então o buraco é geometria de verdade numa primitiva só. Montado com
+cilindros seriam quatro peças por tubo e dezesseis por célula, mescladas,
+para exatamente a mesma silhueta.
+
+PINGUIM E ARMAS (concept sheet)
+---------------------------------
+Os dois esquadrões são o MESMO pássaro azul agora; o time é dito pela aba
+do chapéu e pelo equipamento, nunca pelo corpo — é isso que mantém um
+mascote só no jogo inteiro em vez de dois personagens. A aba é a silhueta
+mais larga do modelo nesta câmera de cima, então é o lugar mais legível
+para carregar a cor do time.
+As duas ferramentas ganharam silhuetas opostas, porque os dois trabalhos
+são opostos: o CORAL BREAKER crava pregos (cano estreito + percussor) e o
+SPONGE CLEANER suga esponja (funil largo). Estreito vs. flarado é a
+diferença que sobrevive no tamanho de celular. O projétil laranja virou um
+prego em T de verdade — cabeça chata redonda virada para o alvo, haste
+atrás — mesclado numa geometria só, já que um tiro nasce várias vezes por
+segundo.
+
+PALETA DOS TIMES
+------------------
+Alinhada aos dois frames-alvo do cliente e ao concept sheet: coral rígido
+vermelho (alvo do laranja), esponja amarelo-esverdeada (alvo do verde).
+Isso substitui o "verde e roxo" pedido no passe anterior — o concept sheet
+é mais específico e amarra alvo, chapéu e arma numa lógica só.
+
+Testado via `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de shader. Teste de
+clique de ponta a ponta confirmando que nada de mecânica mudou.
+
+O que NÃO foi feito (sinalizado):
+- O casco do barco continua de paredes verticais; a referência tem um
+  alargamento (flare) para fora que não foi modelado, e a proposta do píer
+  com barquinho separado (imagem 1) não foi implementada — segui a imagem 2,
+  que o cliente disse preferir.
+- A superfície da água continua um plano: sem ondulação de silhueta e sem
+  refração do que está submerso.
+- O redemoinho continua textura estática.
+- As mochilas/mangueiras do concept sheet estão simplificadas; não há
+  distinção de tanque entre os dois esquadrões além da cor.

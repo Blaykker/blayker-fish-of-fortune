@@ -1,0 +1,124 @@
+styled_fof_version — v1 do reskin: toon shading, paleta, retema dos props
+==========================================================================
+
+Contexto: com a V1 (primitive_version) formalmente fechada, este é o primeiro
+passe da segunda entrega (styled_fof_version) — a reskin estética "Fish of
+Fortune" sobre a mesma base mecânica. Ponto de partida: copiado
+`primitive_version/src/{main.js,config.js,sound.js}` e `index.html` como estão
+(mecânica/layout já validados) para dentro de `styled_fof_version/`, e a partir
+daí aplicadas SOMENTE mudanças visuais — nenhuma mudança de gameplay, câmera,
+layout HUD ou timing nesta pass.
+
+Direcionamento recebido (resumo do brief completo do usuário, com referências
+visuais anexadas do jogo real "Fish of Fortune"):
+- Estética premium "cozy AAA mobile", água turquesa cristalina com fundo de
+  areia, corais/rochas nas bordas.
+- Esteira -> correnteza de água com setas de espuma sutis, baixo contraste.
+- Redemoinho suave no fim da esteira, atrás da pilha de boias.
+- Pilhas de boias vermelhas/brancas como marcador/contador espacial.
+- Bloco central (antes tabuleiro xadrez) -> um grande corte de peixe fresco
+  (lombo/sashimi), com textura de escamas/carne visível.
+- HUD com contadores de Carne Macia / Osso Rígido.
+- Coletores da doca -> pinguins operários com boias/ferramentas, mantendo a
+  mesma grade de slots/posições da V1.
+- Motion mais elástico/orgânico nas animações de coleta.
+- Toon shading limpo via THREE.MeshToonMaterial + gradientMap de 3 tons,
+  luz direcional de ângulo baixo, paleta vibrante e legível.
+
+O que foi feito nesta pass
+---------------------------
+
+PIPELINE DE TOON SHADING:
+- Criada uma gradient map compartilhada de 3 degraus (`buildToonGradientMap`,
+  um canvas 3x1 em escala de cinza com `NearestFilter` — a técnica padrão do
+  three.js para toon shading) e um helper `toonMat(opts)` que já injeta essa
+  gradient map em qualquer material novo.
+- TODOS os materiais visíveis (chão, pilares, esteira/correnteza, tile/ficha,
+  buraco/redemoinho, corpo/orelha/focinho/narina/olho/perna do "porco"
+  (agora pinguim), projétil) foram convertidos de `MeshStandardMaterial` para
+  `MeshToonMaterial` via esse helper. O rastro do projétil continua
+  `MeshBasicMaterial` de propósito — é um brilho translúcido sem sombreamento,
+  não deveria reagir a luz mesmo.
+- A luz direcional/ambiente (`LIGHTING` em config.js, já num ângulo baixo por
+  causa dos passes anteriores da V1) não precisou de nenhum ajuste — o toon
+  shading só reagrupa a mesma luz em faixas duras em vez de um degradê suave,
+  então o ângulo baixo já favorecia o resultado.
+
+PALETA E RETEMA DOS PROPS:
+- `COLORS.background`/`floor` trocados do azul-marinho escuro da V1 para
+  turquesa vibrante + areia clara, per "água cristalina... fundo de areia".
+- Esteira retemada como correnteza: `COLORS.track` para um turquesa mais
+  saturado que o fundo (lê como um "canal" distinto), setas (`trackArrow`)
+  para branco-espuma com baixo contraste — a opacidade (`ARROW_OPACITY` em
+  main.js, ainda 0.55) e a mecânica de crawl/fade já existentes se encaixam
+  perfeitamente no conceito de "espuma fluindo", nenhuma mudança de lógica
+  necessária ali, só de cor.
+- Buraco/zona de morte retemado como redemoinho: cor mais azul-petróleo
+  (`DEATH_ZONE.color`) + uma textura procedural de espiral concêntrica
+  (`buildWhirlpoolTexture`, desenhada via canvas). **Sinalizado para depois**:
+  é uma textura estática, não uma espiral animada/particulada de verdade.
+- Pilares (as duas "equipes" da mecânica original) retemados como os dois
+  materiais de colheita mostrados na referência: time branco = Carne Macia
+  (`pillarWhite`, tom salmão + `buildMeatTexture`, uma textura procedural com
+  veios ondulados e pequenas manchas de gordura) e time preto = Osso Rígido
+  (`pillarBlack`, tom marfim + `buildBoneTexture`, veios mais retos e
+  acinzentados). Como o InstancedMesh de cada cor compartilha UM material,
+  toda a grade de um mesmo time usa a MESMA textura — o que na prática ajuda
+  a leitura de "tudo isso é o mesmo peixe", não atrapalha. **Sinalizado para
+  depois**: isso continua sendo uma grade de cubos individualmente
+  destrutíveis (exigência da mecânica), não um único mesh contínuo de peixe
+  com "mordidas" recortadas conforme os pilares somem — uma versão mais
+  sofisticada disso é um passe de polish futuro, não este.
+- Pilha de fichas (tile) retemada como pilha de boias: mantida a MESMA
+  geometria plana (ela também é a plataforma que o pinguim monta na esteira,
+  então não pode virar um toroide de verdade sem quebrar essa função) mas com
+  uma textura de listras vermelho/branco (`buildLifeRingTexture`) — o
+  resultado ficou surpreendentemente convincente mesmo sem a forma de anel de
+  verdade (confirmado via screenshot com zoom). **Sinalizado para depois**:
+  uma pilha DECORATIVA separada, com toroides de verdade, ao lado da
+  plataforma funcional, é a versão "definitiva" disso.
+- "Porcos" retemados como pinguins operários: mantido o MESMO rig primitivo
+  (corpo arredondado, duas orelhas, focinho cilíndrico, pernas cilíndricas,
+  olhos/narinas) — recolorido para tons de pinguim (corpo escuro
+  azul-acinzentado / barriga clara conforme o time) com o focinho e as pernas
+  em laranja (bico/pés) e a antiga cor de "orelha" reaproveitada como cor de
+  equipamento/colete de cada esquadrão (laranja para o time da carne, azul-
+  petróleo para o time do osso) — uma forma de manter a distinção visual de
+  time exigida pela mecânica (mira só acerta pilar da mesma cor) sem inventar
+  um elemento novo. **Sinalizado para depois**: um remodelo de verdade
+  (nadadeiras, bico em cunha, botas) não foi feito aqui — este é o pinguim
+  "v1", equivalente em espírito ao "v1 primitivo" da mecânica: a forma certa
+  ainda é a forma antiga, só a cor mudou. As animações de andar/recuo/morte já
+  existentes continuam funcionando sem nenhuma alteração de código, já que o
+  rig é idêntico.
+- Projéteis retemados com tons quase-brancos mais quentes/frios por time
+  (combina com a paleta de carne/osso).
+- HTML: título da aba, cor de fundo do letterbox (`#04262b`, um teal escuro
+  de "água profunda" em vez do quase-preto da V1) e o texto da tela de vitória
+  ("Harvest complete!" em vez de "Structure destroyed!") atualizados para o
+  tema — nenhuma mudança de layout/CSS estrutural.
+
+O que NÃO foi feito nesta pass (sinalizado explicitamente para os próximos
+passes da styled_fof_version, análogo aos v2/v3 do plano geral):
+- Motion design elástico dedicado (o brief pede curvas de animação mais
+  orgânicas nas coletas dos pinguins) — as animações desta pass são as MESMAS
+  da V1 (incluindo o bounce elástico já existente na destruição de pilares e
+  nas mortes dos porcos/pinguins), nenhum novo tuning de easing foi feito
+  ainda.
+- Remodelagem geométrica de qualquer prop (pinguim, barco/base do bloco de
+  peixe, boias, corais/rochas nas bordas do cenário) — hoje é 100% reuso da
+  geometria primitiva da V1 com nova cor/textura em cima.
+- Redemoinho e correnteza animados/particulados (hoje são só cor + textura
+  estática).
+- HUD de "Carne Macia / Osso Rígido" com barras de progresso dedicadas — a
+  V1 já tem o "X/5" da pilha como contador; um HUD de recursos coletados
+  (não é algo que existe na mecânica atual, que é sobre capacidade de
+  esteira, não sobre acumular dois materiais) exigiria decidir junto com o
+  usuário o que esse contador representaria no jogo atual antes de desenhar.
+
+Testado via `npm run build` + Playwright (viewport 420x747): build limpo,
+sem erros de JS além do bloqueio esperado do Google Fonts; confirmado por
+screenshot com zoom que a textura de carne/osso, a listra da pilha de boias e
+a espiral do redemoinho renderizam como esperado; teste de clique real de
+ponta a ponta confirmando que toda a mecânica (seleção, esteira, contagem de
+capacidade, tiro) continua funcionando sem nenhuma mudança de comportamento.

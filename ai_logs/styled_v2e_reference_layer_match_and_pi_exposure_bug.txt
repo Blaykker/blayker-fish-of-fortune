@@ -1,0 +1,116 @@
+styled_fof_version — v2e: match do layer breakdown da referência, e o bug
+de exposição (fator PI) que estava por trás de vários passes
+============================================================================
+
+Contexto: o cliente mandou a estética da água decomposta em camadas, da
+esquerda para a direita: areia -> corais/decoração -> reflexo da água na
+areia -> água e atmosfera -> reflexos maiores toon -> barco -> pinguins ->
+correnteza -> redemoinho -> boias -> slots tracejados. O pedido é que o
+resultado final fique igual ao último quadro.
+
+O BUG DE VERDADE DESTE PASSE (e ele explica passes anteriores)
+----------------------------------------------------------------
+O three.js sombreia difuso através de `BRDF_Lambert`, que DIVIDE por PI.
+Ou seja, o multiplicador que uma cor de material realmente recebe é
+
+    (ambientIntensity + sunIntensity * banda_toon) / PI
+
+Um orçamento de luz que soma PI (~3.14) é o que faz uma cor autorada
+renderizar aproximadamente COMO aquela cor — que é a premissa inteira de
+escolher cores chapadas de cel shading no olho.
+
+Um passe anterior leu a água lavada como "3x de superexposição" e derrubou
+o sol para compensar. Esse modelo estava errado por exatamente um fator de
+PI: o orçamento original (2.1 + 0.9 = 3.0) já era praticamente neutro
+(3.0 / PI = 0.955), e cortá-lo para 1.55 fez TUDO renderizar pela METADE do
+valor autorado — o que depois foi perseguido com cores de material cada vez
+mais claras que nunca fechavam a conta. Foi uma sequência inteira de
+ajustes tratando o sintoma.
+
+Como foi fechado o diagnóstico, já que a aritmética "no papel" tinha me
+enganado duas vezes: renderizei a água com `diffuseColor.rgb = vec3(1,0,1)`
+e alpha 1 — magenta puro — e li o pixel de volta. Voltou 186, não 255.
+186/255 em linear dá 0.49, e 1.55 / PI = 0.493. Bateu na casa decimal. Uma
+medida direta valeu mais que qualquer inferência sobre o pipeline de cor.
+
+Correção: sol 1.35 + ambiente 1.75 (soma 3.1, multiplicador ~0.99), e todas
+as cores dos planos autoradas nos valores-alvo de verdade. A divisão entre
+sol e ambiente é a única escolha que sobra, e ela define a profundidade da
+sombra: superfícies sombreadas recebem só o ambiente, então luz/sombra fica
+em ~1.8x — alto-key e suave, como a referência, onde sombra projetada
+quase não existe.
+
+BUG SECUNDÁRIO: a baía virou terra seca
+-----------------------------------------
+Ao ampliar a baía para ela alcançar as bordas do quadro (a referência não
+tem borda de água funda em lugar nenhum), as subidas do fundo do mar
+passaram a SATURAR dentro da área visível e levantaram o leito até +0.07 —
+acima da superfície da água em -0.06. Metade sul do quadro era literalmente
+terra seca, e foi por isso que a cena inteira compunha como areia caqui sem
+nenhum tingimento de água em cima. Cada termo agora é limitado para que a
+soma nunca chegue perto de `surfaceY`.
+
+AS CAMADAS, UMA A UMA
+-----------------------
+1. AREIA — caqui pálido dessaturado (não amarelo de praia). É o que permite
+   a lavagem de menta assentar em cima sem virar cinza.
+2. DECORAÇÃO — estrelas-do-mar e tufos de anêmona pequenos e espalhados
+   pela baía INTEIRA, não só pelas margens. A estrela é extrudada de uma
+   `THREE.Shape`: as pontas côncavas entre os braços são a silhueta toda, e
+   é exatamente a forma que uma pilha de primitivas sem booleano não faz.
+   Cores de doce que não aparecem em nenhuma peça de gameplay, para nunca
+   serem confundidas com alvo.
+3. REFLEXO NA AREIA — e aqui estava um erro de leitura meu nos passes
+   anteriores: esta camada NÃO é cáustico brilhante. É um padrão de células
+   em tons de areia, quase do mesmo valor do leito. Assar isso na própria
+   textura da areia é o que libera o cáustico BRILHANTE para ficar onde a
+   referência o coloca: na superfície. Duas camadas de cáustico em
+   profundidades diferentes só se anulavam em papa.
+4. ÁGUA E ATMOSFERA — gradiente de profundidade em bandas cel, com as duas
+   cores propositalmente PRÓXIMAS uma da outra: a variação da referência é
+   uma lavagem suave, não o corte duro raso/fundo do passe anterior.
+5. REFLEXOS MAIORES (a camada que carrega o visual) — trocado o ruído fBm
+   por um campo de BORDAS de Worley tileável. Ruído de manchas, quando
+   cortado por threshold, vira pontinhos espalhados; a referência não é
+   pontinho, é uma rede conectada de linhas brancas grossas com formas de
+   célula claras entre elas, e só uma estrutura celular produz isso.
+   Detalhe que importa: o interior das células é levantado de zero (0.08):
+   numa intersecção o threshold vai a exatamente 0, e um smoothstep
+   centrado ali deixaria um interior de valor zero na metade da força — o
+   anel de contato sairia translúcido em vez de sólido.
+6-7. BARCO E PINGUINS — sem mudança estrutural, só a paleta corrigida.
+8. CORRENTEZA — na decomposição a correnteza não é uma fita colorida: é uma
+   faixa de pinceladas brancas translúcidas com a água ainda visível
+   através. Material transparente + textura de traços. Aqui os traços SÃO
+   alinhados ao fluxo, ao contrário da areia e da água aberta onde traço
+   direcional foi rejeitado — no canal esse alinhamento é o ponto, porque a
+   forma é o que diz ao jogador para que lado o loop corre.
+9. REDEMOINHO — disco redondo (era uma laje quadrada) em azul-ardósia
+   escuro: é o valor mais escuro do quadro inteiro, e é isso que o faz ler
+   como buraco em vez de mancha de água.
+10-11. BOIAS E SLOTS — já estavam no lugar.
+
+UMA DIVERGÊNCIA DELIBERADA DO TUTORIAL DO ROYSTAN
+---------------------------------------------------
+O tutorial dirige UM threshold com a profundidade, então a rede e o anel de
+contato são o mesmo termo. É elegante, mas tem um efeito colateral que a
+referência não quer: a rede engrossa sozinha onde a baía é rasa, então todo
+o lado da doca virava um tapete branco sólido enquanto o lado fundo ficava
+esparso. A referência mostra uma rede UNIFORME na superfície inteira, com a
+espuma de contato como acento separado e mais forte. Os dois foram
+separados: a rede usa threshold fixo (densidade idêntica em qualquer
+profundidade) e o contato é só uma rampa de profundidade, modulada pelo
+mesmo campo de células para a borda externa continuar orgânica em vez de
+ler como contorno vetorial.
+
+Testado via `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Teste de clique de ponta a ponta confirmando que nada de mecânica mudou.
+
+O que NÃO foi feito:
+- Falta a estrutura xadrez dos corais no visual final combinado — o
+  cliente já sinalizou que essa parte fica de fora desta comparação.
+- A superfície continua um plano (sem ondulação de silhueta) e sem
+  refração do que está submerso.
+- O redemoinho ainda é textura estática; girar o offset em coordenada
+  polar seria a evolução natural.

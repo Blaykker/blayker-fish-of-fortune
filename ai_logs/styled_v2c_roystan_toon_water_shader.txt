@@ -1,0 +1,171 @@
+styled_fof_version — v2c: shader de água toon (Roystan) portado para
+Three.js, cáusticos voronoi, espuma por profundidade e correção de exposição
+============================================================================
+
+Contexto: o passe v2b já tinha dado profundidade real à cena (areia funda,
+dupla sombra, cáusticos, espuma rolando por UV). Este passe troca a
+"água feita de camadas translúcidas empilhadas" por um SHADER de água de
+verdade, seguindo o modelo do tutorial Toon Water Shader do Roystan
+adaptado para Three.js, e resolve dois bugs de renderização que estavam
+sabotando toda a paleta.
+
+Direcionamento recebido (resumo do brief, com 4 referências anexadas):
+- Água com transparência calculada por diferença de profundidade, deixando
+  ver areia e corais submersos.
+- Cáusticos estilizados (referência: textura de células com bordas brancas).
+- Riscos de espuma branca na superfície + linha de espuma sólida onde a
+  água encosta em corais, barco e margens (foam edge / intersecção).
+- Cel shading de alto contraste, paleta vibrante turquesa/azul profundo,
+  mantendo coesão com o `MeshToonMaterial` do resto dos assets.
+- Corais em laranja e roxo/azulado.
+
+DECISÃO DE ARQUITETURA: onBeforeCompile, não ShaderMaterial
+--------------------------------------------------------------
+O shader da água é um `MeshToonMaterial` ESTENDIDO via `onBeforeCompile`,
+não um `ShaderMaterial` escrito do zero. Isso foi escolha explícita e é o
+que o próprio brief pedia ("mantendo a coesão com o restante dos assets em
+MeshToonMaterial"): mantendo o material do three, a água continua passando
+pelo MESMO gradientMap de 3 tons, pela mesma luz direcional e — o mais
+importante — continua RECEBENDO SOMBRA de verdade. Um ShaderMaterial
+próprio significaria reimplementar toda a infraestrutura de sombra e luz do
+three só para recuperar o que já se tinha.
+
+O MODELO DO ROYSTAN, E O INSIGHT QUE ELE CARREGA
+---------------------------------------------------
+  diferença de profundidade contra o depth buffer -> gradiente raso/fundo
+  a mesma diferença, numa escala menor        -> espuma nas intersecções
+  ruído rolando, cortado por esse valor       -> riscos + bordas de espuma
+
+O ponto não óbvio do tutorial: a borda de espuma e os riscos de superfície
+NÃO são dois efeitos. São uma textura de ruído comparada contra um
+threshold, onde o threshold é levado a zero perto de uma intersecção (aí
+quase todo o ruído passa e a espuma vira uma faixa sólida) e fica alto em
+água aberta (aí só os picos do ruído aparecem, como riscos esparsos). Um
+sampler, uma comparação, os dois comportamentos.
+
+PASSE DE PROFUNDIDADE
+-----------------------
+Para o shader saber o que está atrás de cada pixel de água, a cena é
+renderizada uma vez por frame num `WebGLRenderTarget` com `DepthTexture`,
+com a própria água escondida. Detalhes que importam:
+- `UnsignedIntType` (24 bits), não o mais barato `UnsignedShortType`: as
+  comparações aqui são sub-unitárias (a faixa de espuma tem ~0.3 unidades
+  de mundo dentro de um alcance de câmera de 0.1..300) e 16 bits
+  quantizariam isso em degraus visíveis na espuma. Como a câmera é
+  ORTOGRÁFICA, o depth buffer é linear e os 24 bits se espalham por igual
+  em vez de se acumular perto do near plane.
+- A conversão depth -> viewZ usa a fórmula ORTOGRÁFICA. Usar a versão em
+  perspectiva aqui é o erro clássico que faz a espuma "rastejar" ou sumir
+  conforme a câmera se move.
+- `renderer.shadowMap.autoUpdate` foi desligado e o passe principal pede
+  UM update explícito por frame — senão o shadow map seria reconstruído
+  duas vezes por frame, já que ele é recalculado dentro de cada
+  `renderer.render()`.
+- O alvo de profundidade renderiza a METADE da resolução do buffer. A água
+  só lê esse buffer para escolher uma banda de cor e um threshold de
+  espuma, ambos já estilizados; resolução cheia não compra nada visível.
+
+DOIS BUGS REAIS ENCONTRADOS (e eles explicam todas as tentativas
+anteriores de "consertar a cor da água")
+------------------------------------------------------------------
+1. ORDEM DE RENDERIZAÇÃO. O three ordena objetos transparentes de trás
+   para frente pela distância do CENTRO da bounding sphere até a câmera. A
+   areia está deslocada para o sul (bayCenterZ) enquanto o plano de água é
+   centrado na origem — o que deixa o centro da areia MAIS PERTO desta
+   câmera que o da água. Resultado: a areia estava sendo desenhada DEPOIS
+   da água, ou seja, POR CIMA da água que ela deveria estar embaixo. Era
+   por isso que a baía continuava compondo como areia pura por mais que a
+   cor e a opacidade da água fossem ajustadas: a água estava lá, só estava
+   sendo pintada por cima todo frame. Corrigido com `renderOrder` explícito
+   (areia -2, cáusticos -1, água no padrão), em vez de deixar uma
+   heurística de ponto central decidir a pilha.
+
+2. EXPOSIÇÃO ESTOURANDO. O orçamento de luz era `sunIntensity 2.1` +
+   `ambientIntensity 0.9`, ou seja ~3x de irradiância numa superfície
+   virada para cima. Qualquer cor de material acima de mais ou menos um
+   terço do brilho cheio CLIPAVA para branco. Os props escondiam isso
+   porque são curvos — suas normais se espalham pelas três bandas do ramp
+   toon, então só pedaços deles chegam à banda cheia. A areia, a água e o
+   canal da correnteza são planos chapados virados para cima: cada pixel
+   deles cai na banda de cima ao mesmo tempo, e por isso lavavam para creme
+   pálido por mais que a cor e o alpha da água fossem mexidos. Esse era o
+   verdadeiro bloqueio da "paleta vibrante" pedida no brief — não a
+   escolha das cores. Corrigido baixando o orçamento de luz para pousar
+   logo acima de 1.0 (sol 0.95 / ambiente 0.6, mantendo a razão luz/sombra
+   em ~2.6x), que é a premissa do cel shading: uma cor chapada escolhida de
+   propósito precisa renderizar COMO aquela cor.
+
+FUNDO INCLINADO (a mudança que fez o shader valer a pena)
+-----------------------------------------------------------
+Um fundo plano deixa a baía inteira com exatamente uma profundidade, então
+um shader dirigido por profundidade não tem nada para gradar — todo pixel
+cai na mesma banda cel e o resultado é uma laje sólida de cor. O fundo
+agora sobe em direção à doca (sul) e às margens, o que dá ao shader
+justamente aquilo que ele existe para mostrar: rasos de verdade, onde a
+areia e os cáusticos leem com clareza através de pouca água, graduando até
+água funda onde o tabuleiro flutua. É também a composição da própria
+referência — areia clara em volta do píer, turquesa aberto lá em cima.
+A altura do fundo vem de uma única função (`seabedHeightAt`) compartilhada
+pela malha do fundo, pela folha de cáusticos que a acompanha e pelos corais
+decorativos apoiados nela, para que nunca possam se desencontrar.
+
+CÁUSTICOS: WORLEY DE VERDADE
+------------------------------
+A textura de cáusticos foi trocada por um padrão de VORONOI tileável,
+substituindo a "rede" de senos cruzadas do passe anterior. É isso que a
+imagem de referência de cáusticos de fato é: células irregulares separadas
+por bordas nítidas e brilhantes. Redes de senos não conseguem produzir
+isso, porque suas intersecções são regulares por construção — o olho lê uma
+grade, não água. F2-F1 (distância ao segundo ponto mais próximo menos a do
+mais próximo) é quase zero exatamente na fronteira entre células e cresce
+em direção ao centro delas, então bastar cortar esse valor já desenha as
+bordas. Seamless porque a grade de pontos dá a volta: vizinhos além da
+borda vêm do outro lado, deslocados de um tile.
+
+O ruído da espuma é fBm de value noise, também tileável (o hash de cada
+oitava dá a volta no seu período, e todo período divide a textura por
+inteiro). Uma emenda aqui varreria uma linha dura de espuma pela baía toda
+conforme as UVs rolam.
+
+OUTROS
+--------
+- Paleta dos times trocada conforme pedido: coral rígido laranja, esponja
+  macia roxo-azulada. As duas ficam em lados opostos da roda de cores E em
+  lados opostos do azul da própria água, o que é o que mantém o tabuleiro
+  legível num relance no celular — o par vermelho/verde anterior brigava
+  com o turquesa.
+- A espuma da superfície é rolada DENTRO do shader (uniform de tempo), não
+  por offset de textura: ela precisa ficar em espaço de mundo e ser
+  distorcida pela amostra de warp, e um offset de textura não expressa
+  nenhuma das duas coisas.
+- O ruído é amostrado com escala anisotrópica (uNoiseAspect < 1), que é o
+  que transforma manchas redondas nos "riscos" alongados que o brief pede.
+
+Testado via `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Teste de clique de ponta a ponta confirmando que nada de mecânica mudou.
+
+NOTA DE PERFORMANCE: o ambiente de teste aqui roda WebGL por software
+(SwiftShader), onde a cena marca ~2.5 FPS — esse número NÃO é
+representativo de hardware real e não deve ser lido como regressão. O que
+dá para afirmar do teste: baixar o passe de profundidade para meia
+resolução mexeu pouco (2.3 -> 2.5 FPS), o que indica que o gargalo ali é
+quantidade de draw calls na rasterização por software, não fill rate. Em
+GPU real o custo adicional deste passe é uma segunda passada de geometria
+por frame; se isso pesar num device fraco, o caminho é reduzir draw calls
+(os pinguins da fila são ~14 meshes cada), não a resolução do depth.
+
+O que NÃO foi feito (sinalizado para os próximos passes):
+- A superfície continua um plano: não há deslocamento de vértices, então a
+  silhueta da água nas bordas não ondula.
+- Não há refração/distorção do que está submerso (o fundo é visto reto
+  através da água).
+- O barco/doca fica ACIMA da linha d'água, então não gera anel de espuma
+  próprio; submergir levemente o casco daria isso de graça, já que o shader
+  já calcula espuma por intersecção.
+- Na referência (imagem 4) TODOS os pinguins da fila estão sobre um píer de
+  madeira; aqui só a última fileira está sobre o barco, então as duas
+  primeiras aparecem em pé sobre a água. Estender a doca resolveria, mas é
+  mudança de composição e não de água — deixei fora do escopo deste passe
+  de propósito.
+- O redemoinho final continua a textura estática de espiral.

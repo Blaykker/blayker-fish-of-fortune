@@ -515,14 +515,354 @@ Cada comando abre no navegador com hot-reload: qualquer alteração em
     agora ignora pilastras que já têm um tiro a caminho. V1 (primitive_version)
     considerada formalmente fechada a partir deste passe.
 
-### v2 — Feel (responsividade + timing)
+### styled_fof_version — v1 (reskin inicial: toon shading, paleta, retema)
+
+A partir daqui a V1 (`primitive_version`) está fechada e o trabalho passa para
+a segunda entrega, `styled_fof_version` — mesma base mecânica, reskin
+estético "Fish of Fortune". Ponto de partida: cópia literal de
+`primitive_version/src/{main.js,config.js,sound.js}` + `index.html` (mecânica
+e layout já validados na V1), com mudanças SOMENTE visuais a partir daí.
+
+- Passe 1 (ver `ai_logs/styled_v1_toon_shading_palette_and_theme_pass.txt`):
+  todos os materiais visíveis convertidos de `MeshStandardMaterial` para
+  `MeshToonMaterial` com uma gradient map de 3 tons compartilhada (técnica
+  padrão de toon shading do three.js) — a luz direcional de ângulo baixo já
+  herdada da V1 não precisou de ajuste. Paleta inteira retemada para a lagoa
+  tropical (fundo/chão turquesa+areia); esteira virou correnteza de água
+  (mesma mecânica de setas crawl/fade, só recolorida como espuma de baixo
+  contraste); zona de morte virou um redemoinho (textura de espiral
+  procedural); os dois "times" da mecânica original (branco/preto) viraram
+  os dois materiais de colheita da referência — Carne Macia (textura de
+  fillet salmão procedural) e Osso Rígido (textura de veio ósseo
+  procedural) — sobre a MESMA grade de cubos individualmente destrutíveis
+  (não um mesh único de peixe, ainda); a pilha de fichas virou uma pilha de
+  boias (mesma geometria plana, já que ela também é a plataforma que anda
+  na esteira, com uma textura de listras vermelho/branco em cima); os
+  "porcos" viraram pinguins operários reaproveitando o MESMO rig primitivo
+  da V1 (corpo/orelha/focinho/pernas), só recoloridos — a cor de "orelha"
+  virou o acessório/colete de cada esquadrão. Tudo isso reusa 100% da
+  lógica/animações da V1 sem nenhuma mudança de comportamento, confirmado
+  via teste de clique de ponta a ponta.
+- Sinalizado explicitamente para os próximos passes deste reskin (o log
+  completo detalha cada um): motion design elástico dedicado às coletas dos
+  pinguins (hoje reusa o easing da V1 sem ajuste); remodelagem geométrica de
+  qualquer prop (pinguim, base do bloco de peixe, boias, cenário ao redor);
+  redemoinho/correnteza animados de verdade (hoje é textura estática); e um
+  HUD dedicado de Carne Macia/Osso Rígido (a V1 não tem esse conceito de
+  recurso acumulado — precisa de uma decisão de design junto com o usuário
+  antes de desenhar).
+- Passe 2 (ver
+  `ai_logs/styled_v2_coral_torus_penguin_boat_water_pass.txt`): segundo
+  brief do usuário, substituindo os placeholders do passe 1 por "modelos
+  definitivos" e mudando o tema de "mesa de colheita" para uma baía rasa de
+  recife de coral estilo Caribe. A grade deixou de ser cubos texturizados:
+  células pretas agora são corais rígidos (base submersa + 4 pontas
+  aflorando, geometria composta e mesclada numa única BufferGeometry via
+  `mergeGeometries`, para continuar cabendo num InstancedMesh só por time) e
+  células brancas são um blob orgânico de esponja/alga (icosaedro com
+  vértices perturbados). A pilha/tile virou uma boia de verdade — um torus
+  vermelho com 4 faixas amarelas nas direções cardinais — resolvendo a
+  tensão que o passe 1 tinha sinalizado (torus "furado" vs. função de
+  plataforma) simplesmente aceitando o pinguim andando sobre o topo do
+  anel, sem precisar inventar um "deck" extra. O pinguim foi remodelado do
+  zero a partir do rascunho do usuário (corpo chibi, capacete, bico,
+  mochila com tubos, arma/ferramenta na mão), mantendo a MESMA assinatura
+  interna (`userData.parts.{body,earLeft,earRight,legs}`) que o sistema de
+  animação já esperava — zero mudança de código na animação em si. Um
+  barco decorativo foi adicionado na doca, atrás da última fileira visível
+  da fila. A água ganhou uma segunda camada semi-transparente turquesa
+  sobre a areia (abordagem de 2 planos, sem shader customizado). O pouso do
+  pinguim na esteira ganhou uma curva de escala com overshoot (easeOutBack)
+  para um "pop" elástico na aterrissagem — a posição do tile em si manteve
+  o easing original, que precisa terminar velocidade-casado com a esteira.
+  Testado via build + Playwright em 3 viewports + teste de clique completo:
+  nenhuma regressão de mecânica.
+- Passe 2b (ver
+  `ai_logs/styled_v2b_water_depth_stack_caustics_and_toon_foam.txt`):
+  o cenário de água refeito para ter PROFUNDIDADE de verdade. O diagnóstico
+  foi que o problema do passe anterior não era cor nem material, era
+  distância: com o fundo de areia a 0.22 unidades da superfície, o sol
+  projetava as duas sombras nos mesmos pixels e não sobrava nenhuma pista
+  de profundidade. Das duas saídas oferecidas no brief ("ou sobe tudo, ou
+  deixa o fundo mais profundo"), foi escolhida a segunda — subir a
+  superfície teria movido o plano de jogo inteiro na tela e invalidado
+  todos os valores de layout/câmera calibrados ao longo da V1; afundar a
+  areia não move nada. A cena virou uma pilha de 4 camadas (filme de
+  superfície que recebe sombra -> névoa da coluna d'água -> cáusticos
+  aditivos -> areia funda que recebe sombra), com o vão medido em vez de
+  chutado: a 45° de elevação, a sombra do fundo cai `seabedY` unidades na
+  diagonal em relação à da superfície, e -2.4 (primeira tentativa)
+  transformava os grandes projetores em manchas atravessando meia tela, daí
+  -1.7. A camada que resolveu o passe foi a névoa da coluna d'água: ela não
+  recebe sombra e fica ENTRE a areia e o sol, então lava as sombras do
+  fundo do jeito que um metro de água lava — resolvendo de uma vez as
+  faixas pretas duras e o fato de areia quente + um filme turquesa
+  compor verde-sálvia. A baía ainda se dissolve em água aberta nas bordas
+  via um alphaMap radial (possível porque `repeat` é por textura, não por
+  material: a areia repete 7x enquanto o fade fica em 1x). Espuma e
+  cáusticos são 4 texturas procedurais novas, tileáveis, animadas por puro
+  UV scrolling em velocidades divergentes (velocidades iguais fundiriam as
+  camadas numa folha só). No caminho apareceu um bug latente: a fita da
+  esteira nunca teve atributo `uv` — foi construída só para carregar cor
+  chapada — então nenhuma textura podia rolar nela; as UVs passaram a ser
+  geradas junto com a geometria, com U ao longo do caminho, e agora a
+  correnteza flui de verdade em direção ao redemoinho. Verificado em 3
+  viewports, com o movimento confirmado numericamente (diff de dois frames
+  a 1.2s de distância) e sem regressão de mecânica.
+- Passe 2c (ver `ai_logs/styled_v2c_roystan_toon_water_shader.txt`): a água
+  deixou de ser camadas translúcidas empilhadas e virou um SHADER de
+  verdade, seguindo o modelo do Toon Water Shader do Roystan adaptado para
+  Three.js. Foi implementado estendendo o `MeshToonMaterial` via
+  `onBeforeCompile` em vez de escrever um `ShaderMaterial` do zero — assim
+  a água continua passando pelo mesmo gradientMap de 3 tons e continua
+  recebendo sombra de verdade, em vez de exigir reimplementar toda a
+  infraestrutura de luz e sombra do three. Um passe de profundidade
+  (`WebGLRenderTarget` + `DepthTexture`, a meia resolução) dá ao shader a
+  distância até o que está atrás de cada pixel, e desse único valor saem as
+  três coisas pedidas no brief: o gradiente raso/fundo, a transparência, e
+  a espuma. O insight do tutorial é que a borda de espuma e os riscos de
+  superfície não são dois efeitos — é um ruído comparado contra um
+  threshold que vai a zero perto de uma intersecção (espuma sólida) e fica
+  alto em água aberta (riscos esparsos). Dois bugs reais apareceram e
+  explicam todas as tentativas anteriores de acertar a cor da água: (1) o
+  three ordena transparentes pela distância do centro da bounding sphere, e
+  como a areia está deslocada para o sul o centro dela ficava mais perto da
+  câmera que o da água — a areia estava sendo desenhada POR CIMA da água,
+  então a água estava lá e simplesmente era pintada por cima todo frame;
+  (2) com sol 2.1 + ambiente 0.9, um plano virado para cima recebia ~3x de
+  irradiância e qualquer cor acima de um terço do brilho clipava para
+  branco — os props curvos escondiam isso, os planos chapados (areia, água,
+  correnteza) não, e era esse o real bloqueio da paleta vibrante, não a
+  escolha das cores. O fundo do mar também deixou de ser plano: ele sobe em
+  direção à doca e às margens, porque um fundo plano deixa a baía inteira
+  numa profundidade só e um shader dirigido por profundidade não tem o que
+  gradar. Cáusticos passaram a ser um Voronoi tileável de verdade (células
+  irregulares com bordas nítidas — o que a referência de fato é; redes de
+  senos leem como grade porque suas intersecções são regulares por
+  construção), e a paleta dos times virou coral laranja / esponja
+  roxo-azulada, ficando em lados opostos do azul da água para o tabuleiro
+  seguir legível num relance.
+- Passe 2d (ver
+  `ai_logs/styled_v2d_texture_scale_boat_hull_and_foam_dilation.txt`): passe
+  de proporção e leitura mobile. Três feedbacks distintos (texturas grandes
+  demais, "estética de linhas", contato coral/água pequeno demais) eram o
+  mesmo problema por ângulos diferentes: detalhe dimensionado em unidades
+  de mundo sem referência ao tamanho que ocuparia na tela. A régua passou a
+  ser o pinguim da fila (~3 unidades), e nada ficou abaixo de meio pinguim
+  — abaixo disso vira ruído num celular, não textura. As linhas vinham de
+  dois lugares com a mesma causa: a areia desenhava faixas horizontais e a
+  correnteza desenhava riscos esticados no eixo do fluxo; traço direcional
+  é a primitiva errada aqui, porque qualquer coisa com eixo compartilhado
+  lê como pente. As duas foram refeitas com manchas macias sem direção
+  dominante — o que não custa a leitura de fluxo, já que o olho tira a
+  direção do MOVIMENTO das marcas e não do formato delas. O contato
+  coral/água foi o item mais interessante: a largura da faixa de espuma
+  depende de quão rápido a profundidade muda, e um pé de coral é um
+  cilindro vertical, ou seja, um penhasco — a faixa saía com 1-2 pixels.
+  Aumentar a distância de espuma não resolve (não há rampa para percorrer,
+  e o suficiente para engrossar enche toda a área rasa da doca de branco);
+  a correção foi DILATAR o depth buffer, amostrando a profundidade mais
+  próxima num pequeno anel em espaço de tela, o que empurra a leitura de
+  "raso" para fora de cada silhueta por um número fixo de PIXELS — a
+  unidade certa quando o requisito é sobre o que resolve num celular. Só a
+  espuma lê a profundidade dilatada; o gradiente de cor continua na real,
+  senão cada prop ganharia um halo de água da cor errada. O barco foi
+  modelado a partir do concept do cliente (casco com proa facetada,
+  amuradas e convés de tábuas, com a fila inteira em cima dele), e no
+  caminho apareceu outro bug silencioso: o contorno interno do casco
+  terminava depois do externo na popa, e um furo que sai da própria shape
+  não pode ser triangulado — a `ExtrudeGeometry` produzia uma laje sólida,
+  com a fila enterrada até o joelho dentro dela. Times recoloridos para
+  verde e roxo.
+- Passe 2e (ver
+  `ai_logs/styled_v2e_reference_layer_match_and_pi_exposure_bug.txt`): o
+  cliente mandou a estética decomposta em camadas (areia -> decoração ->
+  reflexo na areia -> água -> reflexos toon -> barco -> pinguins ->
+  correnteza -> redemoinho -> boias -> slots) pedindo que o resultado
+  ficasse igual ao último quadro. Ao implementar apareceu o bug que
+  explicava vários passes anteriores: o three.js sombreia difuso via
+  `BRDF_Lambert`, que DIVIDE por PI, então o multiplicador real de uma cor
+  de material é `(ambiente + sol * banda) / PI`. Um passe anterior tinha
+  lido a água lavada como "3x de superexposição" e derrubado o sol — modelo
+  errado por exatamente um fator de PI: o orçamento original (2.1 + 0.9 =
+  3.0) já era neutro (3.0/PI = 0.955), e cortá-lo para 1.55 fez tudo
+  renderizar pela METADE do autorado, o que depois foi perseguido com cores
+  cada vez mais claras que nunca fechavam. O diagnóstico veio de medir, não
+  de inferir: renderizei a água como magenta puro (1,0,1) com alpha 1 e li o
+  pixel de volta — voltou 186 em vez de 255, e 1.55/PI = 0.493 bate com
+  186/255 em linear. Também apareceu um segundo bug: ao ampliar a baía para
+  ela alcançar as bordas do quadro, as subidas do fundo do mar passaram a
+  saturar DENTRO da área visível e levantaram o leito acima da linha
+  d'água — metade sul do quadro era literalmente terra seca. Do lado
+  artístico, a correção de leitura mais importante foi entender que a
+  camada "reflexo da água na areia" da referência não é cáustico brilhante:
+  é um padrão de células em tons de areia, quase do mesmo valor do leito —
+  assá-lo na textura da areia é o que libera o cáustico brilhante para
+  ficar na SUPERFÍCIE, onde a referência o coloca. E o sampler da espuma
+  virou um campo de bordas de Worley em vez de ruído fBm, porque ruído de
+  manchas cortado por threshold vira pontinhos, enquanto a referência é uma
+  rede conectada de linhas grossas — só estrutura celular produz isso. Por
+  fim, uma divergência deliberada do tutorial do Roystan: lá a rede e o anel
+  de contato são o mesmo termo dirigido por profundidade, o que faz a rede
+  engrossar sozinha onde a baía é rasa (todo o lado da doca virava um tapete
+  branco); aqui os dois foram separados, rede com threshold fixo e contato
+  como rampa de profundidade modulada pelo mesmo campo de células.
+- Passe 2f (ver
+  `ai_logs/styled_v2f_topology_foam_sealife_and_concept_sheet_models.txt`):
+  o achado conceitual deste passe é que a espuma de contato nunca foi um
+  problema de profundidade. O tutorial a calcula comparando a água com o
+  depth buffer, o que responde "existe geometria logo atrás deste pixel?" —
+  e essa não é a pergunta da arte, que é "este objeto encosta na linha
+  d'água?". As duas divergem exatamente no caso que o cliente apontou: uma
+  pilha de 5 boias tem 5 objetos com geometria atrás, mas só uma está na
+  água. Rodando em espaço de tela e a meia resolução, o teste ainda
+  serrilhava. A correção não foi ajustar raio nem distância, foi trocar o
+  modelo: a espuma agora é geometria colocada no que de fato flutua,
+  exatamente como as imagens de topologia declaram — e o serrilhado some de
+  graça, porque uma textura borrada não tem degraus. Também entraram: vida
+  marinha cruzando por baixo da água (com tubarão ocasional e baleia rara),
+  que é o argumento mais forte de que a água é transparente, já que um
+  cáustico diz "superfície" mas algo se movendo POR BAIXO dela é o que
+  torna a profundidade legível; paralaxe no reflexo da areia, com duas
+  folhas de cáustico em alturas e velocidades diferentes, porque com uma só
+  a luz desliza como decalque e nenhum ajuste de velocidade conserta um
+  plano que não tem profundidade para entregar; esponjas-tubo com furo de
+  verdade, cada uma numa única `LatheGeometry` cujo perfil sobe a parede
+  externa, atravessa o aro e desce a interna; e o pinguim do concept sheet,
+  onde os dois esquadrões são o mesmo pássaro azul e o time é dito pela aba
+  do chapéu e pelo equipamento — a aba é a silhueta mais larga nesta câmera
+  de cima, então é onde a cor do time é mais legível.
+- Passe 2g (ver
+  `ai_logs/styled_v2g_solid_foam_flowlines_vortex_and_penguin_remodel.txt`):
+  a espuma de contato deixou de ser borrada. O problema não era a
+  intensidade, era a primitiva — borrão em volta de um objeto lê como
+  fumaça, e espuma de desenho tem borda dura. A faixa agora é o
+  preenchimento de um contorno ondulado com o interno furado por
+  `destination-out`, e não um traço: traço centra a espessura na linha e
+  derrama metade dela para dentro, por cima do objeto. Corrigido também um
+  bug real que o cliente pegou: os peixes nadavam de ré, porque a cauda está
+  em +Z local (o modelo olha para -Z) e girar (0,0,-1) por t dá x' = -sen(t),
+  então apontar para +X pede t = -90°, não +90°. Os reflexos perderam as
+  pontas: um campo de Worley se encontra em junções em Y afiadas, e a água
+  do Wind Waker não tem um canto sequer — corrigido elevando a borda a uma
+  potência (a métrica cresce mais rápido no canto, então a curva puxa o
+  canto para dentro sem mexer no meio da aresta) mais um blur no campo. A
+  esteira ficou invisível: a textura de fluxo serve de `map` e `alphaMap` ao
+  mesmo tempo, então só os traços renderizam. O redemoinho virou um funil de
+  paredes côncavas que gira de verdade, com anéis de espuma em fases
+  diferentes e crescimento suavizado. E o convés do barco subiu bem acima da
+  água, o que além de leitura corrigiu um bug: peixes passando na altura do
+  convés apareciam através da madeira, porque a água e a vida marinha são
+  camadas transparentes desenhadas depois do casco opaco.
+- Passe 2h (ver
+  `ai_logs/styled_v2h_analytic_depth_perf_stern_boat_and_vortex.txt`): o
+  pedido de desempenho encontrou um custo que não precisava existir. A cena
+  inteira era renderizada DUAS vezes por frame — um passe de profundidade
+  num render target com DepthTexture — só para o shader da água perguntar
+  onde está o fundo. Mas o fundo não é uma incógnita: é uma função que o
+  próprio projeto escreve, então o shader passou a avaliá-la em vez de ler
+  um buffer. Um render por frame em vez de dois, sem render target, sem
+  depth texture, e a resposta exata em vez de quantizada em 24 bits; as
+  constantes do perfil são injetadas do JS no GLSL para as duas
+  implementações não poderem divergir. A única capacidade perdida — notar
+  props parados dentro d'água — só servia à espuma de contato, que virou
+  geometria no passe anterior. O redemoinho ganhou uma máscara explícita no
+  shader (um teste de profundidade não resolveria: o funil desce, então os
+  fragmentos de água dentro do aro estão de fato à frente das paredes e
+  passariam no teste) e estrias em espiral girando mais rápido que o funil,
+  porque duas taxas no mesmo vórtice leem como água cisalhando e uma taxa só
+  lê como objeto sólido girando. O barco virou de popa, o que de quebra
+  corrigiu um problema não óbvio da proa: o afunilamento estreitava o casco
+  exatamente onde fica a primeira fileira da fila, dando menos convés às
+  raias das pontas.
+
+- Passe 2i–2m (ver os `ai_logs/styled_v2i…` a `…v2m…`): a rede de cáusticos
+  desenhada à mão, um tubo por pilar, a receita de espuma em camadas — e
+  então a MUDANÇA DE CONCEITO. O tabuleiro deixou de ser recife e passou a
+  ser LIXO BOIANDO: latinhas de alumínio e garrafas PET, com as duas
+  tripulações limpando o oceano em vez de quebrar corais. O recife passou a
+  ser o que está EMBAIXO, revelado conforme o tabuleiro esvazia — o que dá
+  ao ato de limpar uma recompensa visual em vez de só um contador.
+- Passe 2n (ver
+  `ai_logs/styled_v2n_livery_floating_idle_suction_vfx_and_cone_vortex.txt`):
+  a cor do time não podia vir de `setColorAt` — cor de instância é um valor
+  só para a instância inteira, e arrastaria rótulo e corpo para o mesmo tom.
+  A pintura foi para textura, o que de quebra derrubou um bug latente: cor
+  de material E cor de instância recebiam o tom cheio, e o three multiplica
+  as duas, então cada pilar renderizava com a própria cor AO QUADRADO. Duas
+  vezes a legibilidade ganhou do realismo: rótulo realista de um terço da
+  altura deixava o tabuleiro cinza, e depois a TAMPA precisou ser laranja
+  também, porque numa câmera isométrica de cima a maior face de uma latinha
+  em pé é a tampa. O idle de boiar roda no vertex shader usando a coluna 3
+  de `instanceMatrix` como fase — nada sobe por frame além de um float, em
+  vez de 676 matrizes. E o redemoinho virou cone: `ConeGeometry` do r169
+  devolve UM TRIÂNGULO POR QUAD (320 onde 40x8 quads precisam de ~600),
+  descoberto contando os triângulos depois que cinco hipóteses plausíveis
+  falharam — refeito com `LatheGeometry`.
+- Passe 2o (ver
+  `ai_logs/styled_v2o_wind_waker_foam_three_layer_vortex_boosts_and_win_screen.txt`):
+  a espuma voltou para Voronoi. Iso-contornos de fBm dão bolhas — ilhas que
+  não têm garantia de se conectar — e a referência do Wind Waker é uma
+  PARTIÇÃO. A angularidade do Voronoi foi resolvida sem filtro: deformar o
+  DOMÍNIO antes de achar as células (reta em espaço deformado é curva em
+  espaço de mundo, e a partição continua exata) e medir DISTÂNCIA ATÉ A
+  ARESTA em vez de F2-F1, porque um traço de largura constante passando por
+  uma junção em Y se funde num blob redondo sozinho. Bug encontrado no
+  caminho: os respingos brancos nunca apareceram desde que foram escritos —
+  `fbm()` soma três oitavas em 0.5/0.25/0.125, máximo 0.875, e o threshold
+  estava em 0.93. Voltou o tiro (a sucção obrigava a apagar o pilar no
+  INÍCIO do voo, e o tabuleiro esvaziava antes de qualquer coisa chegar),
+  entraram os boosts, o HUD de contadores e a tela de vitória.
+- Passe 2p (ver
+  `ai_logs/styled_v2p_penguin_remodel_aimed_weapon_cell_boosts_and_win_drama.txt`):
+  o pinguim refeito do moodboard — o personagem não tem pescoço nem esfera
+  de cabeça, a silhueta inteira é uma gota, e é essa forma única que faz ele
+  ler como ESTE personagem. A arma passou a apontar para onde atira,
+  separando duas coisas que estavam confundidas: o pássaro mantém a própria
+  orientação (o heading dele vem da tangente da esteira) e só o grupo da
+  arma gira, para o mesmo vetor com que o projétil é criado — o alvo é
+  convertido para o espaço do PAI da arma, senão os ângulos estariam errados
+  por exatamente o heading do rig. Boosts passaram a cair por CÉLULA limpa:
+  quatro peças da mesma cor juntas é um alvo em que dá para mirar, então a
+  queda vira algo que se joga para conseguir.
+- Passe 2q (ver
+  `ai_logs/styled_v2q_soundtrack_perspective_camera_refraction_and_v2_close.txt`):
+  trilha sonora, e o "volume do tiro" que não é um volume — cinco riders
+  atirando somam uma dúzia de blips nos mesmos milissegundos e o Web Audio
+  SOMA, então o tiro ficava mais alto quanto melhor o jogador ia. A solução
+  é voice limiting: quem chega dentro da janela é descartado, porque
+  ninguém ouve a diferença entre oito tiros simultâneos e três. A câmera
+  virou perspectiva de LENTE LONGA (14°): é a única forma de ter
+  perspectiva de verdade sem perder a leitura isométrica, e a distância é
+  derivada do enquadramento em vez de dialada. Refração submersa sem um
+  segundo render — o depth pre-pass foi apagado por custo no passe 2h e
+  valeria o mesmo aqui — aplicada nas UVs do leito e num balanço de vértice
+  nos props. E a correnteza ganhou intermitência e deriva de faixa: traços
+  cortados com vãos, cada um começando numa faixa e terminando em outra, o
+  que produz a leitura de juntar-e-separar sem simular nada.
+
+### V2 — estado no fechamento
+
+A V2 está fechada como REskin completo com sistemas: água em camadas
+(profundidade analítica em GLSL, bandas cel, rede de espuma Voronoi,
+cáusticos, refração), redemoinho em três camadas, personagens remodelados
+do moodboard, trilha e efeitos com mix em barramentos, boosts, HUD e tela
+de vitória encenada.
+
+O que fica para a V3 (juice / final touch) está listado em
+`PRO_ROADMAP_E_ASSETS_2D.md`, com a avaliação honesta do nível atual
+(7/10 como protótipo de portfólio, 5/10 como playable ad publicável) e a
+lista de assets 2D a encomendar, com tamanho, paleta em hex e nome de
+arquivo esperado pela integração.
+
+### v3 — Feel (responsividade + timing)
 - O quê: easing de input, ajuste de timing/pacing, resposta ao clique/drag.
 - Por quê: o v1 costuma parecer "robótico"; pequenos ajustes de curva de
   animação e delay mudam completamente a sensação de responsividade.
 - Valores ajustados: *(preencher — ex.: duração de tween, curva de easing,
   deadzone de input)*
 
-### v3 — Polish (juice/VFX/UI)
+### v4 — Polish (juice/VFX/UI)
 - O quê: partículas, squash & stretch, som/feedback visual, transição de
   vitória.
 - Por quê: reforça o momento de recompensa e comunica o resultado com clareza

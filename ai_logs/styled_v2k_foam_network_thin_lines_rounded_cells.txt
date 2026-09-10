@@ -1,0 +1,52 @@
+styled_fof_version — v2k: a espuma finalmente certa (rede fina, células
+grandes e arredondadas)
+============================================================================
+
+TRÊS ABORDAGENS, E AS DUAS QUE FALHARAM ERRARAM POR MOTIVOS OPOSTOS
+----------------------------------------------------------------------
+1. Campo de BORDAS de Voronoi. Células de Voronoi são polígonos convexos:
+   arestas retas e junções em canto, por construção. Potência, blur, rampa
+   mais larga — tudo isso era brigar com a primitiva, não trocá-la.
+2. Pinceladas ovais espalhadas. Suaves, sim. Mas espalhado NÃO É REDE. O
+   branco da referência é conectado, e pinceladas independentes nunca se
+   conectam numa rede só.
+
+A referência é as duas coisas AO MESMO TEMPO: células arredondadas E uma
+teia contínua. Isso exige células que se SOBREPÕEM, cada uma desenhada
+escura com um contorno FINO — o contorno de quem está por cima sobrevive,
+então os traços se encadeiam numa rede contínua enquanto cada forma
+individual continua sendo uma curva fechada.
+
+OS DOIS PARÂMETROS QUE DECIDEM
+--------------------------------
+- LARGURA do traço (~7% do espaçamento entre células). Mais grosso e o
+  branco começa a ganhar o quadro; o brief é explícito que tem que haver
+  muito mais azul que branco.
+- AMPLITUDE dos lóbulos (~5-9%, com 2-3 lóbulos). Amplitude alta deixa o
+  contorno CÔNCAVO e as células saem em formato de estrela — que é de onde
+  as "pontas" continuavam vindo mesmo depois do Voronoi ter saído.
+  Amplitude baixa mantém toda célula convexa, lendo como bolha arredondada.
+
+Isso foi acertado gerando o tile SOZINHO e MEDINDO (~13% de branco), em vez
+de julgar dentro da cena — onde a mesma informação já tinha sido lida
+errado várias vezes. Duas iterações no gerador isolado resolveram o que
+várias rodadas de tuning dentro do jogo não tinham resolvido.
+
+AJUSTE DE COMPOSIÇÃO
+----------------------
+Com a rede fina, o threshold no shader teve que DESCER bastante: as formas
+agora vêm da textura, então o corte só precisa não comer a rede. E o tom da
+água subiu em saturação e opacidade para as células lerem AZUIS contra o
+branco — antes a água estava pálida demais e a rede sumia nela, o que
+mascarava o fato de a estrutura já estar certa.
+
+Testado via `npm run build` + Playwright em 3 viewports: zero erros.
+
+Segue pendente (mesma lista do passe anterior, sem mudanças):
+- HUD de contadores (esponja / coral / dinheiro) com bounce por coleta.
+- Tela de vitória: prêmio, pinguim comemorando, pontos, tempo, 3 estrelas.
+- Trilha sonora de mar/gaivota e ambiente cozy.
+- Remodelo da popa a partir do concept.
+- Redemoinho como superfície girada em vez de buraco.
+- Linhas da esteira com recorte orgânico igual ao da espuma.
+- Boia idêntica à referência.

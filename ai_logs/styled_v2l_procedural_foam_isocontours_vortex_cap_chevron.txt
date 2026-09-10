@@ -1,0 +1,74 @@
+styled_fof_version — v2l: espuma procedural por curvas de nível, tampa do
+vórtice, prego orientado, chevron arredondado
+============================================================================
+
+REFERÊNCIAS DO CLIENTE
+------------------------
+Li o repositório Threejs-water-shader (David Llona). A técnica que importa
+lá é: ondas por RUÍDO procedural (seno de larga escala + Perlin de detalhe),
+espuma nos picos via smoothstep, cor interpolada pela elevação. O ponto que
+resolveu o nosso problema não foi a espuma nos picos — foi o "procedural".
+
+A ESPUMA: O PROBLEMA ERA SER UMA TEXTURA
+------------------------------------------
+Todas as tentativas anteriores (Voronoi, células desenhadas, pinceladas
+ovais) eram TEXTURAS. Uma textura se repete, e na escala em que a baía é
+desenhada a repetição é visível — que é exatamente o "muito padronizada".
+Redesenhar o tile não conserta um tile.
+
+Agora o campo é gerado no shader com fBm, que não tem período: nada se
+repete em lugar nenhum da baía.
+
+E o formato saiu de uma propriedade, não de tuning: a espuma é o CONJUNTO
+DE NÍVEL do ruído — os lugares onde o fBm cruza um valor escolhido. O nível
+de um campo escalar suave é sempre um conjunto de curvas fechadas, suaves e
+conectadas. "Orgânico, sem pontas e em rede" deixou de ser algo a perseguir
+e passou a ser consequência da construção. Dois níveis simultâneos dão a
+densidade irregular da referência em vez de uma malha uniforme.
+O warp é aplicado no DOMÍNIO, não no resultado: deformar o domínio faz as
+curvas se deformarem enquanto derivam (lê como água), enquanto rolar o
+campo pronto lê como uma figura passando na tela.
+A variação de cor DENTRO da silhueta ficou em ~10-15%, como pedido — o
+suficiente para não ler como adesivo, pouco o bastante para continuar
+lendo como água branca.
+
+O PREGO IA NA DIREÇÃO ERRADA
+------------------------------
+Bug real: o projétil nunca foi orientado. Só o rastro era alinhado à
+velocidade; a malha do prego ficava na rotação em que a geometria foi
+autorada, então um tiro para o lado mostrava a cabeça apontando para
+qualquer lugar. Agora a malha é alinhada ao vetor de voo (a cabeça está em
+-Z local, então é esse o eixo alinhado).
+
+O REDEMOINHO: O VAZAMENTO NÃO ERA ONDE EU PROCUREI
+----------------------------------------------------
+Duas tentativas erradas antes de achar: fechei a ponta do cone (não era a
+ponta) e reduzi os anéis de espuma (ajudou, mas não era a causa). O que
+denunciou foi uma ESTRELA-DO-MAR aparecendo dentro do buraco: dava para ver
+o leito ali.
+A razão é geométrica: um cone que abre para cima é um funil, e suas paredes
+só ocultam o que está diretamente atrás DELAS. A cavidade entre a boca e a
+parede é espaço vazio, e o leito atravessa por ele. Fechar a ponta não
+muda isso.
+A correção é uma tampa opaca na boca — que também é como a referência faz:
+nesta câmera não dá para olhar dentro de um buraco de verdade, então a
+profundidade vem da espiral PINTADA e do sombreado, não de geometria. O
+cone continua embaixo para sombrear a borda, e as duas espirais giram em
+velocidades diferentes para cisalharem uma contra a outra.
+Cor: teal profundo, não preto — um poço preto lê como bug de renderização
+num quadro claro de desenho.
+
+SETA EM V ARREDONDADO
+-----------------------
+Um triângulo preenchido tem três cantos por definição: forma com vértices
+não tem ponta arredondada. A seta virou um TRAÇO com `lineCap`/`lineJoin`
+redondos, assado em canvas e usado como alpha de um quad — assim a ponta e
+as duas caudas são arcos de círculo. O shader de wipe continua igual.
+
+Também: correnteza bem mais rápida, marcas do vórtice com espessura,
+opacidade e taxa de giro próprias (marcas idênticas em ângulos regulares
+leem como um ventilador), e água mais cristalina.
+
+Segue pendente: HUD de contadores, tela de vitória com 3 estrelas, trilha
+sonora, remodelo da popa a partir do concept, e as linhas da esteira com
+recorte orgânico saindo da silhueta do canal.

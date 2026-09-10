@@ -1,0 +1,86 @@
+styled_fof_version — v2m: o conceito virou limpeza do oceano (lixo no lugar
+do recife, coleta no lugar do tiro)
+============================================================================
+
+A MUDANÇA DE CONCEITO, E POR QUE ELA MELHORA A MECÂNICA
+---------------------------------------------------------
+O tabuleiro deixou de ser um recife a destruir e passou a ser LIXO a
+recolher: latinhas (metal) e garrafas PET (plástico). Os dois times viraram
+as duas correntes de resíduo.
+
+Isso encaixa melhor do que coral encaixava. A mecânica sempre foi "remova
+tudo do tabuleiro", e com recife isso significava destruir um recife — o
+que brigava com a ambientação de mar bonito que a arte estava construindo.
+Com lixo, remover TUDO é literalmente o objetivo, e o recife de verdade
+passa a ser o que aparece EMBAIXO conforme o tabuleiro esvazia. É a mesma
+regra de jogo com a leitura invertida.
+
+COLETA, NÃO TIRO — E ISSO SIMPLIFICOU O TIMING
+------------------------------------------------
+A viagem do projétil foi INVERTIDA: o pedaço de lixo sai do tabuleiro e vai
+até a ferramenta (aspirador para plástico, ímã para metal), em vez de um
+projétil sair do bico e ir até o alvo.
+Efeito colateral bom: a pilastra é removida no instante em que a coleta
+COMEÇA, não quando algo aterrissa. Antes havia um objeto voando em direção
+a uma peça que ainda estava de pé; agora o objeto que voa É a peça saindo
+do lugar. Uma inversão de direção resolveu junto uma incoerência de leitura
+que a flag `targeted` só mascarava.
+
+FERRAMENTAS COM SILHUETAS OPOSTAS — E UMA REVERSÃO CONSCIENTE
+---------------------------------------------------------------
+Bocal flarado de aspiração para o plástico; cabeça de ímã em ferradura
+(anel vermelho + dois polos prateados) para o metal.
+Isso REVERTE a decisão do passe anterior, que tinha padronizado as duas
+pontas — e a reversão está certa porque a premissa mudou: naquele momento
+as duas ferramentas faziam o mesmo trabalho e só mudavam de cor, então uma
+ponta comum era coerente. Agora o TRABALHO é diferente, e a silhueta tem
+que dizer qual é qual.
+
+ESPUMA RECORTADA
+------------------
+A distância até a curva de nível passou a ser remapeada numa janela estreita
+na borda da faixa, em vez de rampar por toda a largura dela: o resultado é
+um recorte SÓLIDO com aresta nítida, em vez de um degradê esfumaçado. A
+modulação lenta de opacidade virou um `step` grosseiro pelo mesmo motivo —
+multiplicar a faixa inteira por um campo suave devolve exatamente a borda
+macia que o threshold duro acabou de tirar. Movimento +10%.
+
+PEIXES SEMPRE ABAIXO DA LINHA D'ÁGUA
+--------------------------------------
+Havia um teto por fração de profundidade, o que não bastava: um tubarão é
+alto o suficiente para a dorsal furar a superfície mesmo "nadando fundo". O
+teto agora é calculado sobre o TOPO do animal, não sobre o centro, e os
+dois grandes foram achatados mais (0.4 em vez de 0.62 no eixo vertical).
+Achatar é muito mais barato que aprofundar a água — aprofundar custaria
+justamente a leitura cristalina que toda a pilha de camadas existe para
+sustentar.
+
+REDEMOINHO AZUL
+-----------------
+A textura virou um gradiente radial de azuis com braços em espiral em dois
+tons (claros pegando luz, escuros na sombra), com o valor mais escuro
+reservado à garganta. Poço preto lê como bug de renderização num quadro
+claro de desenho; a profundidade tem que vir de uma rampa de azuis.
+
+ANEL DE ESPUMA
+----------------
+Mais justo ao objeto, e agora ele MORRE junto com o objeto: nas fases
+'falling' e 'despawning' a opacidade cai rápido. Antes o anel ficava para
+trás sobre água vazia quando o pinguim acabava a munição e a boia voltava
+para a pilha — foi exatamente o que o cliente notou.
+
+Também nesta pass: formações de coral e algas no leito, com quatro tipos
+sorteados em vez de dois, já que o leito passou a ser o que o jogador
+descobre ao limpar.
+
+NÃO ENTROU — e é a maior pendência aberta:
+- Tesouros/relíquias no lixo, indo para os slots tracejados, clicáveis,
+  dando powerups temporários acumuláveis (munição x N, multi-alvo, mais
+  boias, tiro mais rápido). É uma mecânica nova inteira: estado de slot,
+  clique, timers e efeitos sobre quatro sistemas diferentes. Prefiro fazer
+  num passe só a espalhar meia implementação.
+- Tela de vitória com o pinguim 3D comemorando, pontuação, tempo e 3
+  estrelas.
+- HUD de contadores com bounce.
+- Trilha sonora.
+- Remodelo da popa a partir do concept.

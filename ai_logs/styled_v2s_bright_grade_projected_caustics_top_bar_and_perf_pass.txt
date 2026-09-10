@@ -1,0 +1,271 @@
+styled_fof_version — v2s: grade tropical claro, cáusticos projetados,
+barra superior, moeda — e o passe de performance que fecha a V2
+============================================================================
+
+
+1. O PASSE DE PERFORMANCE — MEDIDO, NÃO ADIVINHADO
+----------------------------------------------------
+Este é o item mais útil do passe e vale contar na ordem em que aconteceu,
+porque a primeira medição derrubou a primeira hipótese.
+
+Baseline: 1.1 FPS num renderizador de SOFTWARE (swiftshader, headless).
+Número absoluto sem sentido — o que presta é a comparação relativa.
+
+TENTATIVA 1 — otimizações de JS. Tirei três coisas caras:
+  - `tickPrizeGlows` fazia `pillars.some(...)` sobre 676 pilares POR BRILHO
+    POR FRAME. Com ~25 células premiadas isso é ~17.000 comparações por
+    frame para um efeito que só muda quando algo é destruído. Virou um
+    contador por célula, mantido no único lugar em que um pilar pode
+    morrer.
+  - `totalAlivePillars()` filtrava os 676 a cada destruição. Virou um
+    total corrente.
+  - `tickPigHose` DESCARTAVA E RECRIAVA uma TubeGeometry por rider por
+    frame — cinco buffers de posição, cinco de índice e cinco de normal
+    alocados e liberados a cada frame, para uma forma de 54 vértices. Virou
+    escrita no array existente, sem alocação nenhuma.
+
+Resultado: 1.1 FPS. NENHUMA mudança.
+
+Isso não significa que o trabalho foi inútil — significa que o gargalo
+estava em outro lugar, e o teste eliminou o JS como suspeito. Num
+rasterizador de software o custo de fragmento domina tanto que trabalho de
+CPU some no ruído; num celular de verdade esses três continuam sendo
+economias reais, mas não eram O problema.
+
+TENTATIVA 2 — cortei o loop dominante do shader. `voronoiEdge` varria 5x5
+na segunda passada: 25 sítios x 2 hashes = 50 hashes por fragmento, e isso
+roda DUAS vezes na maior parte da tela (uma para a superfície da água, uma
+para os cáusticos projetados no leito embaixo dela).
+
+A justificativa original do 5x5 era que um 3x3 deixava mordidas na rede —
+e era verdade da versão que varria em volta da célula ORIGINAL. Varrendo em
+volta da célula MAIS PRÓXIMA (que é o que o código já faz), o anel extra
+responde uma pergunta que já tinha sido resolvida. 25 -> 9.
+
+Também removi `cellTone()` inteiro: era uma TERCEIRA varredura 3x3 sobre os
+mesmos sítios para achar um valor que a primeira passada já tinha
+encontrado. Agora sai por parâmetro de saída.
+
+Resultado: 1.0 FPS. Ainda nada visível — porque o software rasterizer já
+estava saturado.
+
+TENTATIVA 3 — a medição que resolveu. Reduzi o viewport a UM QUARTO dos
+pixels (412x915 -> 206x458). Se a cena fosse limitada por preenchimento, o
+FPS deveria subir umas 4x. Subiu 1.7x.
+
+Ou seja: uma parte grande do custo por frame NÃO ESCALA COM PIXELS. E há
+exatamente uma coisa nesta cena com essa forma — o passe de SOMBRA. Ele
+renderiza todo objeto que projeta sombra num mapa 1024x1024 de resolução
+fixa, independente do tamanho da janela, e o three re-renderiza esse mapa
+TODO FRAME por padrão.
+
+Correções:
+  - `shadow.autoUpdate = false` e `needsUpdate` marcado em frames
+    alternados. Metade do passe, e invisível: são sombras suaves de
+    desenho, sob um sol que quase não se move, sobre objetos que andam
+    poucos pixels entre frames. Sombra a 30Hz atrás de geometria a 60Hz não
+    é algo que o olho resolva aqui. Os dois momentos em que pular seria
+    errado — reconstruir o tabuleiro e sair da pausa — forçam a
+    atualização.
+  - Mapa de 1024 para 768. O custo é quadrático nesse número: 44% menos
+    téxeis.
+
+Resultado: 1.0 -> 1.2 FPS. ~20%, e é o primeiro ganho que a medição
+conseguiu enxergar.
+
+TENTATIVA 4 — o maior ganho de aparelho real, e estava numa linha.
+`setPixelRatio(min(dPR, 2))` virou `min(dPR, 1.5)`. Um celular moderno
+reporta dPR 3; limitar em 2 ainda renderiza QUATRO vezes mais fragmentos
+que limitar em 1, e esta cena é pesada em fragmento. 2.0 -> 1.5 remove 44%
+de cada um deles.
+
+Custa quase nada aqui por causa do que a arte É: bandas cel chapadas,
+espuma pintada grossa e silhuetas de borda dura. Não há textura fina nem
+texto no 3D para as amostras extras resolverem — e o HUD, que tem texto
+fino, é DOM e renderiza em resolução nativa de qualquer jeito.
+
+Confirmação: medindo em deviceScaleFactor 2 o FPS cai para 0.8 e em 1 sobe
+para 1.2, o que fecha a conta — a cena responde a contagem de fragmentos
+como esperado, e o teto do dPR é o botão mais forte que existe.
+
+LIÇÃO: a hipótese óbvia (JS caro) estava errada, e duas rodadas de
+otimização correta não moveram o ponteiro. Foi uma medição de VARIAÇÃO DE
+RESOLUÇÃO — barata, trinta segundos — que apontou o passe de sombra. Vale
+mais que qualquer leitura de perfil neste tipo de cena.
+
+
+2. GRADE CLARO E TROPICAL
+---------------------------
+Todas as paradas de hora do dia foram levantadas; a noite é a única escura.
+O jogo abre ao MEIO-DIA e o ciclo automático começa DESLIGADO.
+
+São duas decisões separadas e as duas são sobre primeira impressão: o
+visual próprio do jogo é o tropical claro, então é isso que o jogador
+precisa ver no primeiro segundo — e não a hora em que o relógio por acaso
+estiver — e uma luz que começa a derivar imediatamente torna o primeiro
+frame impossível de dirigir. O ciclo é um recurso que o jogador liga no
+menu, não um padrão contra o qual ele tem que lutar.
+
+O contraste do dourado continua vindo da RAZÃO sol/ambiente, não de um
+ajuste de sombra.
+
+
+3. LIXO NA COR DO TIRO — LITERALMENTE O MESMO HEX
+---------------------------------------------------
+As garrafas e latas são pintadas com o hexadecimal EXATO do tiro
+correspondente. O briefing pede tom, valor e saturação próximos, e o jeito
+honesto de garantir isso é usar o mesmo número, não aproximar no olho um
+valor que desalinha toda vez que qualquer um dos dois for reajustado.
+
+Roxo virou MAGENTA quente. O roxo ficava ao lado do próprio azul-violeta do
+céu noturno e perdia identidade depois do anoitecer; magenta não tem
+vizinho em nenhuma parada da tabela de horas.
+
+
+4. CÁUSTICOS PROJETADOS — O MESMO CAMPO, LIDO EMBAIXO
+-------------------------------------------------------
+O pedido é uma cópia da espuma da superfície projetada em tudo que está sob
+a água: mais fina, mais esparsa, mais transparente, mais distorcida. Isso é
+o que cáustico É — a forma da superfície focando luz no que está embaixo.
+
+O ponto importante: é a MESMA construção de Voronoi que o shader da água
+desenha a espuma, reavaliada no mesmo XZ de mundo. Como os dois leem
+posição de mundo (e não uma projeção de tela ou de UV), o padrão no leito
+alinha com o padrão da superfície de graça. Uma textura de cáustico
+autorada à parte jamais conseguiria ficar em registro com uma superfície
+procedural animada — que é exatamente por que a folha de cáustico assada
+que existia antes sempre pareceu um efeito diferente.
+
+Para isso funcionar, o toolkit de ruído + Voronoi foi extraído para UMA
+string compartilhada. Não é arrumação: se as duas cópias divergissem por
+uma constante, uma frequência ou um hash, a luz no fundo pararia de bater
+com a espuma que a está lançando.
+
+As diferenças são todas deliberadas: traço mais fino, células maiores,
+contribuição bem menor, um warp próprio maior (luz refratada oscila mais
+que a superfície que a entorta), e uma queda com a profundidade.
+
+
+5. A CORRENTEZA: SOMBRA AZUL QUEBRADA
+---------------------------------------
+A primeira versão da subcamada eram nove faixas longas emendadas atravessando
+o tile — ou seja, uma lavagem CONTÍNUA. E uma faixa escura contínua sob a
+correnteza lê como pista pintada, exatamente o defeito que os traços
+brancos tinham antes de serem segmentados.
+
+Agora são MANCHAS: várias por faixa, de comprimentos diferentes, com vãos
+reais entre elas, e confinadas ao MEIO do canal em vez de atravessarem a
+largura. Opacidade de 0.32 para 0.17, e a fita ficou mais estreita que a
+dos traços em vez de mais larga — ela é uma insinuação de profundidade, não
+uma sombra.
+
+
+6. O REDEMOINHO, PELAS MARCAÇÕES
+----------------------------------
+- As marcas de espiral internas (verde na imagem) voltaram a aparecer:
+  estavam em opacidade 0.42 e sob o grade mais claro tinham praticamente
+  sumido. 0.78.
+- A transição suave (rosa na imagem) é ALPHA POR VÉRTICE na fita de
+  espiral: a fileira do aro vai a zero e a do ápice fica sólida, então as
+  marcas emergem do cone em vez de começarem numa linha. Feito por vértice
+  e não com uma textura radial porque o aro NÃO é um círculo — é a curva
+  deformada e animada, e um gradiente radial só saberia apagar um círculo.
+- A borda interna disforme (vermelho na imagem) continua orbitando: o termo
+  `-tempo` dentro do ÂNGULO de cada harmônico gira o padrão inteiro em
+  volta do eixo, no mesmo sentido do vórtice. É coisa diferente da forma
+  mudar — um padrão que só se deforma no lugar lê como fervura, um que
+  também viaja lê como sendo arrastado pela água.
+
+
+7. RESPINGO EM GOTAS, ESTEIRA EM CAUDA
+----------------------------------------
+O ANEL foi embora. Ele tinha dois problemas e o segundo é o que importava:
+lia como grafismo e não como água (um círculo perfeito crescendo a taxa
+fixa é uma onda de choque), e parecia dessincronizado porque ESTAVA — um
+anel só é um evento único, então qualquer descompasso entre disparar e o
+objeto tocar não tem onde se esconder.
+
+Partículas resolvem os dois. Cada gota tem ângulo, velocidade e vida
+próprios, então o efeito tem uma DISPERSÃO de tempos em vez de um só, e
+alguns frames de erro dentro de um espalhamento são invisíveis. Elas também
+arcam sob gravidade e caem, que é a parte que lê como água ter peso.
+
+A ESTEIRA virou uma CAUDA afunilada, como a do tiro. Manchas redondas
+soltas em intervalos leem como linha pontilhada por mais junto que estejam.
+Uma esteira é UMA forma: mais larga onde o casco está e puxada até nada
+atrás. Maior e mais lenta para sumir que a do tiro — uma boia desloca muito
+mais água que um projétil.
+
+E ao cair no redemoinho o pinguim agora é PUXADO PARA O CENTRO. Antes ele
+afundava reto onde estivesse, o que colocava metade das quedas fora do
+funil — um buraco que não puxa as coisas para o meio é um alçapão, não um
+redemoinho. O alvo é convertido para espaço local do rig, senão sairia
+errado por exatamente o heading da esteira.
+
+
+8. BARRA SUPERIOR, MOEDA, PAGAMENTO
+-------------------------------------
+Moedas à esquerda, os dois contadores de lixo ao lado, pausa na extrema
+direita — uma faixa só atravessando o quadro, então o botão de pausa
+pertence à barra em vez de flutuar no próprio canto. É o que a referência
+faz, e é por isso que o HUD dela lê como uma tira e não como widgets
+espalhados.
+
+SÓ O ÍCONE PULA. Fazer a pílula inteira quicar deslocava o número e o
+contorno junto, o que tornava o valor difícil de ler exatamente no momento
+em que ele muda — o único momento em que o jogador está olhando para ele.
+
+Contorno BRANCO na ilustração, seguindo a mesma regra do texto: num HUD
+escuro um contorno navy some no fundo.
+
+A MOEDA é persistida em localStorage, então é um número que cresce ENTRE
+sessões e não um segundo placar da partida — que é o motivo inteiro de a
+moeda existir, já que a barra superior já tem dois placares. Envolvido em
+try/catch porque storage lança direto em navegação privada e em contextos
+embutidos, e um playable que quebra no boot por não conseguir ler uma
+contagem de moedas seria uma troca ruim pelo recurso.
+
+O PAGAMENTO é o último tempo da vitória, depois das estrelas — de
+propósito, porque o valor DEPENDE delas: pagar antes do rank ser revelado é
+mostrar a resposta antes da pergunta. E ele só é somado ao total quando a
+contagem na tela termina, para o número que o jogador vê subindo e o número
+da barra superior nunca discordarem.
+
+
+9. O PINGUIM
+--------------
+- Corpo mais alto e estreito (1.28 -> 1.52 em Y, 0.9 em X). A doze numa
+  fila 4x3, o bicho anterior lia como uma bandeja de bolinhas apertadas; o
+  vertical é o que dá postura e o estreitamento é o que dá ar entre as
+  colunas.
+- A BAZUCA não atravessa mais o bico. A pose de descanso apontava o cano
+  direto à frente da cara — visível em todos os pinguins da fila ao mesmo
+  tempo, que é o pior lugar possível. Agora ela é levada ombreada, com yaw
+  e pitch que a jogam para trás e para cima da cabeça, e o código de mira
+  só a traz à frente para atirar.
+- UMA MANGUEIRA da mochila até a arma, e ela SEGUE a arma. Os dois tubinhos
+  que ela substitui eram filhos do corpo e apontavam para lugar nenhum —
+  com o cano rastreando alvos, liam como dois canos mirando água vazia.
+  Reconstruída (em posições, sem alocar) a cada frame do ponto onde a
+  mochila está até onde a arma está, porque é a única forma de continuar
+  conectada com uma ponta em movimento. E só para os riders: os doze da
+  fila nunca movem a arma, então a deles é montada uma vez.
+- A MOCHILA tem os dois cantos externos arredondados e os dois que encostam
+  no corpo quadrados. Uma caixa uniformemente arredondada lê como
+  travesseiro, uma uniformemente quadrada lê como caixote; o que faz ler
+  como mochila amarrada nas costas é as arestas livres serem macias e a
+  encostada não.
+- O chapéu virou BONÉ DE MARINHEIRO com pala e faixa, e a faixa leva a cor
+  da ARMA. O bicorne anterior era um toro mais um domo — duas silhuetas
+  brigando, e nenhuma dizia "marinheiro".
+
+Testado com `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Tela de vitória com o pagamento verificada pela porta de debug.
+
+BUG no caminho, e é uma repetição: uma CRASE dentro do GLSL (eu tinha
+escrito `closestCell +` com crases num comentário) fechou o template
+literal e o build morreu com "Expected a semicolon" a duzentas linhas de
+distância. É a segunda vez neste projeto que uma crase dentro de um bloco
+de shader quebra o arquivo. Comentário dentro de template literal não leva
+crase — vale como regra fixa.

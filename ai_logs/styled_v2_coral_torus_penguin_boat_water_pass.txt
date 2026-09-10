@@ -1,0 +1,159 @@
+styled_fof_version — v2: modelos definitivos (recife de coral, boias em
+torus, pinguim remodelado do zero, barco na doca, água cristalina)
+============================================================================
+
+Contexto: com o primeiro passe de reskin da styled_fof_version fechado
+(toon shading + paleta + retema sobre a MESMA geometria primitiva da V1),
+este é o segundo passe, formalmente iniciado pelo usuário como "V2dentro da
+pasta styled_fof_version/", substituindo as soluções temporárias (texturas
+em caixas, tile plano com textura de boia) por modelos geométricos
+definitivos. Nenhuma mudança de mecânica, câmera ou layout HUD nesta pass —
+só geometria/material/motion, exatamente como no primeiro passe.
+
+Direcionamento recebido (resumo do brief completo do usuário):
+- Cenário: baía rasa estilo Caribe, fundo de areia visível sob água
+  cristalina, com sombras nítidas via toon shading.
+- Obstáculo (grade xadrez): células "pretas" = corais rígidos com 4 pontas
+  aflorando + base submersa única; células "brancas" = esponjas/algas
+  orgânicas.
+- Boias (substituindo as antigas fichas/pilhas): torus/donut vermelho
+  clássico com faixas amarelas nas 4 direções cardinais, servindo tanto de
+  base flutuante quanto de plataforma de transporte.
+- Pinguins operários (substituindo os porcos): modelo 3D do zero baseado no
+  rascunho — chibi parrudo, capacete/boné, bico marcante, mochila de
+  suprimentos com tubos, arma/ferramenta nas mãos.
+- Proa do barco: destaque na doca, de onde os pinguins partem.
+- Técnica: manter/refinar MeshToonMaterial + gradiente de 3 tons; água
+  cristalina turquesa deixando ver a areia; motion design elástico/bounce
+  nas animações de interação e coleta.
+
+O que foi feito nesta pass
+---------------------------
+
+GRADE — CORAL RÍGIDO / ESPONJA MACIA (substituindo os cubos texturizados):
+- `buildCoralGeometry(height)`: um cilindro-base (parcialmente submerso,
+  deslocado abaixo de y=0) + 4 cones afunilados ("pontas") inclinados para
+  fora, tudo mesclado em UMA ÚNICA BufferGeometry via
+  `mergeGeometries` (three/examples/jsm/utils/BufferGeometryUtils.js) — a
+  técnica que permite manter isso como geometria de um InstancedMesh só
+  (676 pilares, 1 draw call por time), em vez de virar uma árvore de
+  sub-meshes cara demais para o volume de instâncias.
+- `buildSpongeGeometry(height)`: um icosaedro com os vértices perturbados
+  por uma função senoidal (sem mesh extra, só deformação de uma única
+  geometria) — dá um blob orgânico/poroso em vez de uma esfera perfeita,
+  sem custo adicional de draw call.
+- Ambas as geometrias já nascem com a base em y=0 (antes o cubo precisava
+  de um offset de metade da altura) — as duas InstancedMesh de cor
+  (branca=esponja, preta=coral) tiveram sua posição de instância ajustada
+  de `GRID.pillarHeight/2` para `0` de acordo.
+- Paleta: `COLORS.pillarWhite`/`pillarBlack` (nomes de campo mantidos por
+  compatibilidade com toda a lógica de mira/time) trocados de
+  salmão/marfim (carne/osso) para verde-recife vibrante (esponja) e
+  coral-vermelho/laranja (coral rígido). As texturas procedurais antigas
+  (`buildMeatTexture`/`buildBoneTexture`) ficaram órfãs (não removidas do
+  arquivo, só não referenciadas mais) já que a nova silhueta geométrica
+  carrega a leitura "orgânica" sozinha, sem precisar de textura por cima.
+
+BOIAS EM TORUS (substituindo o tile plano com textura de life-ring):
+- `buildBoiaMesh()`: um `THREE.TorusGeometry` deitado (rotacionado para o
+  eixo do furo ficar vertical) + 4 caixas finas ("faixas") posicionadas nas
+  4 direções cardinais ao redor do tubo, cada uma uma cor amarela
+  (`TILE.stripeColor`) sobre o corpo vermelho (`TILE.color`) — geometria e
+  material compartilhados via constantes de módulo (`boiaTorusGeo`/
+  `boiaBandGeo`), do mesmo jeito que o antigo `tileGeo` shared-const, já
+  que aqui NÃO são instâncias (são Meshes/Groups avulsos, um por peça da
+  pilha + um por pinguim ativo na esteira).
+  **A tensão sinalizada no passe anterior** ("um toroide de verdade
+  quebraria a função de plataforma de transporte, já que teria um buraco
+  no meio") foi resolvida simplesmente aceitando essa restrição: o
+  pinguim "anda" sobre o topo do anel, que já tem espessura de tubo
+  suficiente para servir de base visual — não foi necessário adicionar um
+  "deck" extra preenchendo o furo. `TILE.width/height` continuam
+  controlando o footprint geral (raio/espessura do toro), então toda a
+  matemática de empilhamento da pilha (`PILE_GAP`/`STACK_PILE_STEP`) e o
+  papel de "capacidade da esteira" não precisaram mudar.
+- `buildFicheStack()` e `spawnRig()` trocaram `new THREE.Mesh(tileGeo,
+  tileMat)` por `buildBoiaMesh()`; a lógica de dispose em `pig.dispose()`
+  foi ajustada para excluir as DUAS geometrias compartilhadas
+  (`boiaTorusGeo`/`boiaBandGeo`), não só uma.
+
+PINGUIM OPERÁRIO — REMODELADO DO ZERO (substituindo o rig de porco
+recolorido):
+- `buildPigMesh` foi reescrito por completo: corpo (esfera achatada,
+  "chibi parrudo"), barriga clara (segunda esfera achatada, contraste de
+  time), capacete + aba (cor por esquadrão, reaproveitando o slot de cor
+  que antes era "orelha"), bico proeminente (cone largo, era um cilindro
+  fino), mochila de suprimentos (caixa arredondada nas costas), 2 tubos
+  finos ligando a mochila a uma arma/ferramenta (cilindro) segurada à
+  frente, e as antigas "orelhas" viraram nadadeiras/flippers laterais
+  (cápsulas) — mais fiel à anatomia de pinguim E reaproveitando a mesma
+  animação de "wiggle" de orelha que já existia, que agora lê como as
+  nadadeiras batendo suavemente no idle.
+  **Compatibilidade preservada de propósito**: `group.userData.parts =
+  {body, earLeft, earRight, legs}` continua com EXATAMENTE a mesma forma
+  de antes, então `animatePigProcedural` (ciclo de andar, balanço no
+  idle, recuo do tiro) não precisou de nenhuma mudança de código — só a
+  geometria por trás de cada nome mudou.
+  **Bug evitado, não introduzido**: o achatamento do corpo (esfera
+  1.05/1.2/1) foi aplicado direto na GEOMETRIA (`bodyGeo.scale(...)`), não
+  no `mesh.scale` — porque `animatePigProcedural` já usa
+  `body.scale.setScalar(...)` todo frame para o pulso de recuo do tiro; um
+  scale não-uniforme no mesh teria sido sobrescrito por esse
+  `setScalar` a cada frame, achatando o efeito "chibi" de volta ao
+  padrão assim que o pinguim disparasse.
+
+BARCO NA DOCA:
+- `buildBoatProp(hullLength)`: casco (caixa arredondada), proa afunilada
+  (caixa rotacionada 45°) e uma amurada baixa (per "lateral aberta", não
+  uma cabine fechada, para não esconder a fila se formando na proa) —
+  posicionado logo ao sul da última fileira VISÍVEL da fila (usando
+  `queueSlotPosition`), abrangendo a largura total das 4 raias. Puramente
+  decorativo, não interfere em nenhuma posição de slot da fila.
+
+ÁGUA CRISTALINA:
+- Abordagem de 2 camadas (mais simples que um shader de refração
+  dedicado): o plano de areia (`floor`, já existente) ganhou um SEGUNDO
+  plano por cima (`waterSurface`), um `MeshToonMaterial` turquesa
+  vibrante com `transparent: true, opacity: 0.45` — a areia (e sua sombra
+  projetada via luz de ângulo baixo já configurada) continua visível por
+  baixo, sem precisar de nenhum shader customizado ou segundo render pass.
+
+MOTION DESIGN ELÁSTICO:
+- A posição do tile/boia durante a animação de "entrada na esteira"
+  continua com o easing ease-IN original (`t*t`) — mantido de propósito,
+  já que esse valor precisa terminar EXATAMENTE alinhado em velocidade com
+  o movimento constante da esteira (mudar isso reintroduziria a "pausa"
+  que uma pass antiga já identificou e corrigiu). A parte que ganhou
+  elasticidade foi o CRESCIMENTO DE ESCALA do pinguim ao pousar na esteira
+  (`pigGroup.scale`), que agora usa uma curva easeOutBack (overshoot leve
+  além do tamanho final, assentando de volta) em vez de acompanhar
+  linearmente o mesmo `eased` da posição — um "pop" elástico barato na
+  aterrissagem, sem tocar a mecânica de handoff de velocidade com a
+  esteira.
+
+Testado via `npm run build` (limpo) + Playwright em 3 viewports (420x747,
+390x844, 412x915): nenhum erro de JS além do bloqueio esperado do Google
+Fonts; confirmado por screenshot que corais/esponjas renderizam como grade
+alternada legível, a pilha de boias mostra o torus vermelho com faixas
+amarelas visíveis mesmo em miniatura, o barco aparece como estrutura de
+doca sob a última fileira da fila, e a água turquesa translúcida não
+esconde a leitura da grade/pilares por baixo. Teste de clique real
+(seleção de pinguim -> entrada na esteira -> tiro -> destruição de
+pilar) confirmando que nenhuma mecânica de gameplay foi alterada por este
+passe 100% visual/geométrico.
+
+O que NÃO foi feito nesta pass (sinalizado para os próximos passes):
+- Água ainda não tem nenhuma distorção/ondulação de superfície (é um plano
+  estático semi-transparente, não um shader de onda).
+- Redemoinho final continua sendo a textura estática espiral do passe
+  anterior — não foi revisitado geometricamente nesta pass (o brief não
+  pediu mudança explícita nele além do enquadramento narrativo já
+  compatível).
+- O barco é só casco/proa/amurada — sem detalhes internos (motor, cordas,
+  caixas de suprimento) nem uma silhueta com "personalidade" própria além
+  do formato básico.
+- Nenhuma segunda camada de elasticidade foi aplicada às outras animações
+  de coleta (ex: o voo da fila até a esteira, `flightDuration`, ou o
+  slide lateral entre raias) — só o pouso na esteira ganhou a curva
+  elástica nesta pass, per prioridade dada ao restante do brief
+  (geometria) sobre motion polish extensivo.

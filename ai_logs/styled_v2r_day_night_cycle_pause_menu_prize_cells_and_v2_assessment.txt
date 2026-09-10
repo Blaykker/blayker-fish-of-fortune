@@ -1,0 +1,283 @@
+styled_fof_version — v2r: ciclo dia/noite, menu de pausa, células com
+prêmio, pinguim pirata — e a avaliação da base para a V3
+============================================================================
+
+
+1. O CICLO DIA/NOITE — UMA TABELA, NÃO PRESETS
+------------------------------------------------
+A cena atravessa manhã, tarde, dourado e noite, e o menu de pausa pode
+dirigir isso direto.
+
+A decisão que importa: é UM relógio normalizado (0..1) alimentando uma
+tabela de paradas chaveadas, e cada luz e cor do quadro é uma interpolação
+entre as duas paradas em que o momento cai. A alternativa — um conjunto de
+"presets" que são trocados — NÃO consegue ser suave, porque não existe nada
+entre dois presets para interpolar. Uma tabela de keyframes dá movimento
+contínuo E ainda permite que cada momento do dia seja autorado
+deliberadamente, em vez de sair de uma fórmula.
+
+Três detalhes que decidem se isso funciona:
+
+  a) As cores são interpoladas em espaço LINEAR via lerpColors, não
+     misturando componentes hex. Misturar um pôr do sol quente e uma noite
+     fria em sRGB leva o ponto médio por um cinza sujo — exatamente onde a
+     transição é mais visível.
+  b) O blend entre paradas é SMOOTHSTEPPED, não linear. Um blend linear
+     muda de direção bruscamente em cada parada, e numa deriva lenta isso
+     lê como a luz "clicando" de um clima para o outro.
+  c) A parada final duplica a primeira em vez de a busca ter um caso
+     especial de wrap-around. Um branch de wrap dentro da interpolação é o
+     lugar clássico de um off-by-one, e uma linha de dados a mais não custa
+     nada.
+
+O AMBIENTE carrega a cor da SOMBRA, porque uma superfície sombreada recebe
+só ambiente — então é ali que o "azulado/roxeado" pedido é definido. E ele
+é mantido BAIXO em croma de propósito: ambiente multiplica todo material do
+quadro, e um ambiente muito saturado não tinge as sombras, tinge a imagem
+inteira e transforma areia quente em lama. Errei isso na primeira tentativa
+(0x8d7ad4) e o quadro inteiro ficou marrom-arroxeado; o matiz lê porque é
+um DESVIO contra uma luz quente, não porque é forte.
+
+O contraste dramático da sombra no dourado não vem de um ajuste de sombra:
+vem da RAZÃO entre sol e ambiente. Sol em 1.95 com ambiente em 1.3 dá uma
+sombra dura; os mesmos valores somando o mesmo total mas mais próximos um
+do outro dariam uma sombra chapada.
+
+TDZ evitada de propósito: applyTimeOfDay lê `waterUniforms` e `floor`, que
+são consts declarados bem abaixo no arquivo. NÃO há guarda `typeof` neles —
+`typeof` não protege contra a temporal dead zone, ele LANÇA para um binding
+let/const não inicializado. A proteção real é que a função só é chamada de
+tickTimeOfDay e setTimeOfDay, ambas depois da inicialização do módulo.
+(Este projeto já apanhou exatamente disso uma vez, na ref do shader de
+água.)
+
+
+2. CÉLULAS COM PRÊMIO
+-----------------------
+Algumas células são marcadas NO BUILD como tendo prêmio, e anunciam isso
+brilhando POR DENTRO do lixo — que é onde a garrafa ser translúcida passa a
+importar: a luz é um núcleo emissivo pequeno colocado dentro da peça, lido
+através do plástico.
+
+Marcar antes, e não sortear na hora da destruição, é o ponto inteiro. Um
+prêmio que o jogador só descobre quando cai é recompensa aleatória; um que
+ele VÊ do outro lado do tabuleiro é um ALVO, e transforma o tabuleiro de um
+campo a ser limpo num campo com coisas dentro que vale a pena alcançar
+primeiro.
+
+Aditivo, não blend normal: é luz saindo da garrafa. Um blend normal sobre
+um objeto translúcido só o deixa gizento.
+
+Uma célula que estava brilhando SEMPRE paga — é a promessa que a luz estava
+fazendo. Uma célula comum mantém a própria chance, então limpar em qualquer
+lugar continua valendo alguma coisa.
+
+
+3. O PINGUIM PIRATA
+---------------------
+Reaproveita o pássaro inteiro e só ADICIONA um chapéu — sem segundo modelo
+e sem segundo caminho de código em lugar nenhum. Isso importa mais do que
+parece: todo sistema a jusante (fila, escolha, rig, mira, tiro, despawn)
+continua funcionando nele sem mudança, porque para eles é um pinguim comum
+cuja munição por acaso começa mais alta.
+
+O chapéu é na cor da TRIPULAÇÃO, não preto, para a raridade nunca custar a
+leitura de time — o jogador ainda precisa saber de relance qual esquadrão
+está escolhendo.
+
+40 e não 25: o ponto de uma escolha rara é que pegá-la MUDA a partida, e um
+bônus de 25% seria ruído contra a variação natural de quantos tiros
+acertam.
+
+E a munição é lida do MODELO, não da constante — o rig herda o que o
+pássaro da fila estava mostrando, senão o número na mochila seria uma
+mentira até o momento da escolha.
+
+
+4. O BICO E A BANDANA — DUAS CORREÇÕES DE LEITURA DE CÂMERA
+--------------------------------------------------------------
+O BICO virou uma CUNHA AFUNILADA, não um cone de revolução. Um cone tem o
+mesmo perfil de todo ângulo, então da câmera de jogo — olhando de cima — ele
+lia como uma bolinha laranja. Bico de pássaro é largo e fundo na base e
+afina até uma ponta nos DOIS eixos ao mesmo tempo, e é mais achatado que
+alto. Então é uma pirâmide de 4 lados, esmagada — e os quatro planos são o
+que faz ler como bico em vez de cenoura.
+
+A BANDANA levou três tentativas e a terceira é a que explica as duas
+primeiras. Primeiro foi uma cúpula larga que engolia a cabeça. A correção
+foi encolher, o que trocou uma leitura errada por outra: virou um gorrinho
+empoleirado, com um vão de azul entre pano e crânio.
+
+A resposta certa não é nenhuma das duas: uma bandana é amarrada EM VOLTA da
+cabeça, então precisa ter a mesma forma que a cabeça naquela altura e
+encostar nela. O raio agora é DERIVADO do afunilamento do próprio corpo na
+altura da bandana em vez de escolhido no olho — e essa derivação é a razão
+de ela encaixar em vez de flutuar.
+
+Mas a ALTURA em que ela era encaixada continuava errada: a 0.78 a cabeça
+ainda está perto do mais largo, então uma bandana rente ali é tão larga
+quanto o bicho e, de uma câmera olhando para baixo, ELA É o bicho. Subir
+pelo afunilamento faz o mesmo encaixe rente cobrir só a coroa, e sobra um
+anel de azul do corpo em volta — que é o que deixa o personagem ler como um
+pinguim azul usando algo branco, em vez de um borrão branco.
+
+A BARRIGA tinha o mesmo problema pelo mesmo motivo: centrada na altura do
+peito, ela projeta no TOPO da silhueta vista de cima e vira a cor principal
+do personagem — foi assim que um pinguim azul vivo acabou parecendo pálido.
+Desceu e foi para a frente, onde um perfil a vê e uma vista de cima quase
+não.
+
+
+5. O HIGHLIGHT: DUAS ULTRAPASSAGENS EM SENTIDOS OPOSTOS
+---------------------------------------------------------
+O expoente especular foi de 64 para 18 e depois para 26. Em 64 o brilho era
+um pixel claro perdido; em 18 ele engolia cabeças inteiras. O lobo precisa
+ser uma MANCHA legível numa esfera do tamanho de um pinguim e não maior —
+a FORMA é o que diz plástico, não o brilho.
+
+Vale registrar porque é a segunda vez neste projeto que o especular
+ultrapassa: ele é somado direto em outgoingLight, DEPOIS da rampa toon, ou
+seja, não compete com a iluminação, empilha em cima dela. Qualquer valor
+que pareceria razoável como "intensidade de brilho" é grande demais aqui.
+
+
+6. A CORRENTEZA GANHOU CORPO
+------------------------------
+Os traços brancos sozinhos davam movimento mas nenhum PESO — liam como
+marcas desenhadas em água plana e não como um corpo de água se movendo. O
+que faltava é o que torna uma correnteza visível de cima na vida real: a
+água dentro dela é mais funda e mais escura que a água em volta.
+
+Então uma segunda fita, mais LARGA, corre por baixo num azul-marinho de
+opacidade baixa. Ela é derivada da geometria do próprio canal em vez de
+reconstruída, então segue toda curva exatamente e não pode sair de registro
+com os traços de cima.
+
+As faixas longas e esfumaçadas da textura dela derivam a uma taxa
+DIFERENTE dos traços brancos, e essa diferença é a razão inteira de a
+camada adicionar profundidade: duas camadas na mesma taxa são uma camada
+só. A profundidade vem da PARALAXE, não da cor.
+
+A textura da subcamada é deliberadamente o oposto da textura dos traços em
+toda propriedade — longuíssima em vez de segmentada, muito suave em vez de
+definida, cobrindo quase o tile todo em vez de metade. Duas camadas que
+compartilham a mesma linguagem visual empilham numa camada mais confusa;
+duas que contrastam leem como duas profundidades.
+
+
+7. RESPINGOS, ESTEIRA DE ESPUMA, E O ANEL QUE ENCOSTA
+--------------------------------------------------------
+O RESPINGO é um anel achatado deitado NA água, não um sprite billboard.
+Essa escolha é o efeito inteiro: um sprite sempre encara a câmera, então
+neste ângulo isométrico ele ficaria em pé no mar como uma carta, enquanto
+um anel deitado no plano da superfície encurta exatamente como uma
+ondulação real e não precisa de trabalho nenhum para assentar certo.
+
+A ESTEIRA da boia solta marcas por DISTÂNCIA percorrida, não por tempo.
+Spawnar num timer amontoaria a esteira onde a boia desacelera e a esticaria
+onde ela acelera — precisamente ao contrário: uma esteira é deixada por
+deslocamento, então espaçamento fixo em metros é o que faz ela ler como uma
+marca contínua em vez de um fluxo de baforadas.
+
+O ANEL de espuma da boia foi dimensionado pelo DIÂMETRO EXTERNO DA BOIA
+(raio + tubo), não pelo footprint nominal do tile. TILE.width é o espaço
+que a boia ocupa, e o toro dentro dele é menor — então um anel em
+TILE.width deixava uma faixa visível de água aberta entre a espuma e o
+objeto contra o qual ela deveria estar batendo.
+
+O som de splash é ruído por um filtro que sobe e cai, que é o que um
+respingo é de fato: uma explosão de banda larga cujo conteúdo brilhante
+morre conforme as gotas perdem energia. Um tom afinado leria como "blop".
+
+
+8. O MENU DE PAUSA
+--------------------
+Pausar seta uma flag que o loop principal lê; ele NÃO para o rAF. Dois
+motivos: o loop também é o que mantém o renderer vivo para o preview 3D do
+painel de lore, e reiniciar um loop rAF parado sem nunca duplicá-lo tem
+mais peças móveis que um booleano.
+
+O relógio é resetado no resume. Sem isso, o delta do THREE.Clock voltaria
+como a duração inteira da pausa, e todo tween, timer e contagem de boost
+saltaria para a frente pelo tempo que o jogador passou no menu.
+
+O painel de lore renderiza os dois pinguins ao vivo, reusando o renderer da
+tela de vitória por inteiro — um contexto WebGL a mais por painel é
+exatamente o vazamento que aquela tela já tomava cuidado de evitar.
+
+Mexer no slider de hora assume controle MANUAL. Um ciclo automático ainda
+rodando arrastaria o ajuste para longe de onde o jogador acabou de colocar,
+o que lê como o controle estar quebrado.
+
+
+9. HUD
+--------
+Os contadores viraram uma linha horizontal centralizada no topo. Empilhados
+num canto eram duas pílulas pequenas disputando o mesmo canto com o botão
+de pausa; lado a lado leem como um placar, que é o que são.
+
+Os ícones são DESENHADOS, não emoji. Um ♻ e um ⚯ diziam "reciclagem" e
+"alguma coisa", não "uma garrafa PET" e "uma latinha". São os dois objetos
+sobre os quais o jogo inteiro é — o HUD tem que mostrar os objetos. E
+desenhá-los aqui em vez de embarcar PNGs mantém a única regra que este
+projeto sustentou o tempo todo: nada de arte externa, tudo procedural, para
+nada sumir ou sair da paleta quando as cores de time mudam.
+
+Os boosts ativos viraram uma pilha VERTICAL na borda direita, uma ficha por
+tipo. Vertical porque a quantidade varia — uma linha horizontal deslocaria
+o grupo inteiro de lado toda vez que um boost expira, enquanto uma pilha só
+cresce e encolhe para baixo a partir de uma âncora fixa.
+
+Somados por tipo: dois rapid-fire apareciam como duas contagens correndo
+uma contra a outra, o que não diz nada acionável. O número honesto é o
+MAIOR dos dois, não a soma — é o instante em que o último deles expira.
+
+A ESTRELA ganhou squash-and-stretch de verdade. O segredo é que o squash e
+o stretch estão em EIXOS SEPARADOS em cada keyframe — X para cima enquanto
+Y para baixo, e depois o inverso — porque squash-and-stretch é sobre volume
+sendo conservado, e um bounce de escala uniforme (que era o que existia) lê
+como zoom, não como algo aterrissando.
+
+
+10. AVALIAÇÃO: A BASE ESTÁ BOA PARA FECHAR A V2?
+--------------------------------------------------
+Sim, com uma ressalva.
+
+O QUE ESTÁ PRONTO PARA V3:
+- A pilha de água é sólida e barata (profundidade analítica em GLSL, rede
+  de Voronoi com domínio deformado, refração sem segundo render).
+- O ciclo dia/noite é um SISTEMA, não um efeito: qualquer coisa nova
+  ganha a hora do dia de graça se ler das mesmas paradas.
+- O loop de jogo está completo de ponta a ponta: escolher -> andar ->
+  mirar -> atirar -> limpar -> boost -> vitória -> replay.
+- Áudio com mix em barramentos e voice limiting, então adicionar sons na
+  V3 não vai reabrir o problema de volume.
+- Menu de pausa, lore e créditos — a moldura de "produto" existe.
+
+A RESSALVA, e é a mesma de dois passes atrás: o TABULEIRO continua sendo
+676 peças de duas silhuetas. Toda a riqueza que entrou (cor por instância,
+libré pintada, brilho, boiar) atua sobre duas formas. É a única área onde
+mais trabalho no mesmo eixo dá retorno decrescente — o que falta ali é
+mais SILHUETAS (sacola, tampinha, rede, bota), não mais variação das duas
+existentes. Isso é trabalho de modelagem, não de shader, e continua sendo
+o item de maior impacto por hora depois do som.
+
+O QUE A V3 PRECISA COBRIR, em ordem de retorno:
+ 1. Partículas de impacto e texto flutuante no lixo destruído (o único
+    lugar do loop sem feedback visual próprio).
+ 2. Movimento de câmera: push-in de abertura, zoom na vitória, shake leve
+    em combo.
+ 3. Mais silhuetas de lixo.
+ 4. Tensão — timer ou maré. Ainda não existe fracasso possível, e sem
+    risco o ranking de estrelas não tem por que importar.
+ 5. CTA / end card, se o alvo for playable ad de verdade.
+
+Nota atualizada: 8/10 como protótipo de portfólio (era 7), 6/10 como
+playable publicável (era 5). O que subiu foi produção — som, ciclo de luz,
+menus, tela de vitória. O que não subiu é o item 4: ainda não dá para
+perder.
+
+Testado com `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Verificados também os três painéis do menu de pausa e três horas do dia
+distintas via o slider de tempo.

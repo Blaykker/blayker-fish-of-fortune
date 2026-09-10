@@ -1,0 +1,89 @@
+styled_fof_version — v2h: o passe de profundidade foi eliminado, barco pela
+popa, redemoinho mascarado, esponjas rosa / corais verdes
+============================================================================
+
+O GANHO DE DESEMPENHO: O PASSE DE PROFUNDIDADE NÃO PRECISAVA EXISTIR
+----------------------------------------------------------------------
+O pedido foi "simplifique e melhore o desempenho, quero só o necessário".
+O maior custo da cena era, de longe, o passe de profundidade: a cena INTEIRA
+era renderizada uma segunda vez por frame, num render target com
+DepthTexture, só para o shader da água perguntar "quão longe está o fundo?".
+
+Só que o fundo não é uma incógnita. Ele é uma função que este projeto mesmo
+escreve (`seabedHeightAt`). O shader passou a AVALIAR essa função em vez de
+ler um buffer: um render por frame em vez de dois, sem render target, sem
+depth texture, sem amostragem a meia resolução — e a resposta é exata em vez
+de quantizada em 24 bits.
+
+As constantes do perfil são injetadas do JS no fonte GLSL (`#define`), para
+as duas implementações não poderem divergir: um shader que discordasse
+silenciosamente da malha sobre onde está a areia produziria um gradiente de
+profundidade deslizando fora do leito.
+
+A única coisa que o depth buffer fazia e isto não faz é perceber props
+parados dentro d'água. Isso só importava para a espuma de contato — e a
+espuma de contato virou geometria no passe anterior. Nada se perdeu.
+(Junto: `renderer.shadowMap.autoUpdate` já estava desligado por causa do
+passe duplo; agora há um único update de sombra por frame, como sempre
+deveria ter sido.)
+
+REDEMOINHO: A ÁGUA PRECISA PARAR NA BORDA DELE
+------------------------------------------------
+O cliente notou que a textura de reflexo passava POR CIMA do redemoinho, e
+está certo: ali não é superfície plana, é um buraco. O shader agora recebe
+o centro e o raio do vórtice e faz `discard` dentro dele. Um teste de
+profundidade não resolveria: o funil desce, então os fragmentos de água
+dentro do aro ficam de fato NA FRENTE das paredes do funil e passariam no
+teste — a máscara tem que ser explícita.
+Somadas marcas de movimento: sete estrias em espiral logarítmica para
+dentro da garganta, girando MAIS RÁPIDO que o funil. Duas taxas no mesmo
+vórtice é o que lê como água cisalhando ao cair; uma taxa só lê como objeto
+sólido girando.
+
+BARCO PELA POPA
+-----------------
+Virado: a face reta (o espelho de popa) é o lado que dá para o recife, e o
+barco é aberto ali. A inversão corrigiu um problema que a proa tinha e que
+não era óbvio: um afunilamento estreita o casco exatamente onde fica a
+PRIMEIRA fileira da fila, então as raias das pontas tinham menos convés que
+as do meio. Um espelho de popa dá a mesma largura a todas as raias.
+O alargamento exagerado continua, agora no lado sul (o mais próximo da
+câmera) — a câmera é ortográfica e não dá vantagem de tamanho a nada, então
+o exagero tem que vir da geometria.
+
+ESPUMA MAIS COLADA
+--------------------
+Faixa mais fina e o decalque mais justo à silhueta em todos os casos.
+
+CORRENTEZA
+------------
+Menos traços, mais grossos e mais definidos; seta 3x. Na escala anterior a
+seta era a menor coisa da tela sendo, ao mesmo tempo, a única informação que
+o jogador precisa ler antes de tocar em qualquer coisa.
+
+ARMA EM DESCANSO
+------------------
+No idle e andando, a bazuca fica no ombro — virada para o lado e inclinada
+para cima — e só desce para a frente no tiro. Numa fila de 4 raias o
+pinguim da frente está a pouco mais de um corpo de distância, e um cano
+apontado para frente atravessava ele. A volta para a pose de ombro é
+interpolada, não instantânea: a arma descendo e subindo é metade da leitura
+do disparo.
+
+CORES
+-------
+Esponja rosa, coral spike verde, boia vermelha e branca (o campo continua
+se chamando `boiaYellow` porque todos os call sites o referenciam — só o
+significado mudou). Mais corais no fundo, e maiores.
+
+Testado via `npm run build` + Playwright em 3 viewports: zero erros de JS ou
+de shader; clique de ponta a ponta sem mudança de mecânica.
+
+O que ficou pendente:
+- O anel de espuma da boia ainda não desaparece suavemente quando o pinguim
+  sobe/morre — a animação de despawn não está ligada à opacidade do decalque.
+- A composição da imagem 2 (cristalina com areia amarela nítida por baixo)
+  está mais perto, mas o cáustico ainda domina o quadro; o próximo passe
+  deveria baixar a densidade da rede e subir o contraste da areia.
+- Muretas laterais do barco existem, mas sem o detalhe de corda/madeira da
+  referência.

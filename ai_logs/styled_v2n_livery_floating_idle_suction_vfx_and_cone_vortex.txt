@@ -1,0 +1,213 @@
+styled_fof_version — v2n: libré do lixo por time, idle de boiar, VFX de
+coleta invertido, e o redemoinho remontado como cone
+============================================================================
+
+Pedido deste passe:
+- Melhorar o design da latinha (rótulo laranja, ou algo na paleta do
+  pinguim que coleta ela) e o mesmo para a garrafa PET — as cores têm que
+  ficar bem características de cada pinguim.
+- Movimento de boiando nos lixos do tabuleiro (um idle leve).
+- Ao coletar: o item vai até a ponta da bazuca MANTENDO A COR ORIGINAL, só
+  ganhando o rastro do item vindo (o INVERSO da cauda do tiro, para dar
+  sensação de distorção) e encolhendo perto da ponta, para ser sugado.
+- Estética de espuma da imagem 1: cores mais vivas, laranja da areia mais
+  presente, aspecto mais cristalino, corais maiores.
+- Redemoinho montado como na imagem 2 (3/4 view, side view, top view): um
+  CONE.
+
+
+1. A COR NÃO PODIA VIR DO `setColorAt`
+---------------------------------------
+O tabuleiro é duas InstancedMesh, e a variação por peça vinha de
+`setColorAt`. Cor de instância é UM valor para a instância inteira: ela
+arrastaria o rótulo e o corpo para o mesmo tom, que é exatamente o oposto
+do que um rótulo serve para fazer. Então a libré inteira foi PINTADA em
+textura, e a cor de instância foi rebaixada a um jitter quase-branco que
+multiplica a arte — assim corpo e rótulo variam juntos, como variação de
+iluminação real.
+
+Isso derrubou de quebra um bug latente: a cor do MATERIAL e a cor da
+INSTÂNCIA estavam ambas recebendo o tom cheio da peça, e o three multiplica
+as duas — cada pilar renderizava com a própria cor AO QUADRADO. Com a arte
+no map, o material é branco e a cadeia volta a ser neutra.
+
+Para o rótulo cair no lugar certo foi preciso mexer no PERFIL, não na
+textura: `LatheGeometry` escreve `uv.y = j / (pontos - 1)`, ou seja, v é o
+ÍNDICE do ponto, não o comprimento de arco. Com o perfil antigo de 7 pontos
+a parede inteira ocupava v 0.33..0.5 — um sexto da textura para posicionar
+qualquer coisa. A parede foi subdividida em pontos de mesmo raio: nada muda
+na silhueta, e v passa a ter resolução ao longo da altura.
+
+
+2. LEGIBILIDADE GANHA DE REALISMO (duas vezes, pelo mesmo motivo)
+------------------------------------------------------------------
+Primeira tentativa: rótulo de um terço da altura, como uma latinha de
+verdade. O tabuleiro renderizou CINZA UNIFORME num celular. Um pilar tem
+uns dez pixels de largura ali, então quem detém a maioria da silhueta É a
+cor que o jogador vê — e a identidade de time, que é a única informação que
+o tabuleiro precisa carregar, tinha se perdido para o alumínio. O rótulo
+passou a cobrir quase toda a parede.
+
+Segunda tentativa: ainda cinza no topo. A câmera é isométrica DE CIMA, e a
+maior face de uma latinha em pé é a TAMPA. Com tampa de alumínio realista o
+tabuleiro continuava cinza mesmo com a parede laranja inteira, porque a
+parede é justamente a face que o jogador menos vê. A tampa virou laranja, e
+o ombro/gargalo da garrafa virou azul pelo mesmo motivo. Só então o
+tabuleiro leu como o xadrez laranja/azul que ele precisa ser.
+
+A regra que sai daí: dimensione o detalhe pela face que aponta para a
+câmera, não pelo objeto real.
+
+
+3. IDLE DE BOIAR NO VERTEX SHADER
+----------------------------------
+São ~676 instâncias boiando. Fazer isso em JS significa reconstruir 676
+matrizes e re-subir os dois buffers de instância todo frame — exatamente o
+que InstancedMesh existe para evitar.
+
+O deslocamento é calculado no vertex shader a partir do próprio
+`instanceMatrix`: a coluna 3 é a translação da instância, então ela já
+serve de FASE por instância, estável e de graça. Nada sobe por frame além
+de um float.
+
+A inclinação é um SHEAR (x e z deslocados em proporção ao y local), não uma
+rotação de verdade. Nesses ângulos — poucos graus — as duas são
+visualmente idênticas, e o shear são três multiply-adds em vez de montar
+uma matriz. As normais ficam como estão de propósito: numa rampa toon de 3
+faixas, 3 graus de normal quase nunca cruzam a borda de uma faixa, então
+recalculá-las custaria mais do que aparece.
+
+
+4. O RASTRO INVERTIDO
+----------------------
+Um projétil disparado arrasta uma cauda mais larga no objeto e afinando
+até um ponto atrás: o cometa clássico, que lê como algo SAINDO. Um objeto
+coletado é o evento oposto — ele está sendo puxado, e a água atrás dele é
+que está sendo arrastada. Então o cone foi virado: o ÁPICE fica no objeto e
+ele ABRE para trás, que é a forma de uma esteira sendo esticada em vez de
+uma cauda sendo perdida.
+
+Consequências que vieram junto e são o mesmo raciocínio:
+- A opacidade CRESCE com a distância percorrida em vez de decair: quanto
+  mais perto da tomada, mais forte a sucção.
+- O rastro estica em Y enquanto estreita em X/Z — distorção, não uma
+  redução uniforme.
+- O item encolhe no último quarto do trajeto. Isso é o que faz a ferramenta
+  ler como uma tomada em vez de uma luva de apanhador, e de brinde esconde
+  o momento do despawn dentro do movimento: nada some com um pop na ponta.
+- O item mantém a própria libré (material branco + o mesmo map do
+  tabuleiro). Tingi-lo, como estava, quebrava a leitura: o jogador via uma
+  bolinha em formato de garrafa aparecer, e não A SUA garrafa saindo do
+  tabuleiro.
+
+
+5. O REDEMOINHO — E O BUG QUE CUSTOU O PASSE INTEIRO
+------------------------------------------------------
+O concept mostra o mesmo objeto em três vistas, e o motivo de desenhar três
+é que ele é um CONE em todas: triângulo de lado, círculo de cima, paredes
+retas em 3/4. O que existia era um funil de paredes côncavas (raio caindo
+com t^1.8) com um disco pintado tampando a boca — outro objeto: de lado lê
+como tigela, e a tampa achatava o topo num decalque.
+
+Refeito com paredes retas, ápice para baixo, boca na linha d'água. E aí
+começou o problema.
+
+O cone renderizou como um TRANÇADO DE CESTA: triângulos sólidos alternando
+com buracos vazados, num leque radial — visivelmente a triangulação da
+própria malha. As hipóteses testadas, em ordem, cada uma plausível:
+
+  a) A textura helicoidal pintada aliasando contra a segmentação. Removi a
+     hélice → continuou.
+  b) A rampa toon nas normais. Troquei por MeshBasicMaterial de cor chapada
+     → continuou.
+  c) O par parede-perto/parede-longe brigando em profundidade (o ângulo da
+     parede é próximo da elevação da câmera isométrica, então a parede
+     próxima fica quase de perfil). Culled para BackSide → continuou.
+  d) Z-fighting com o leito do mar. Medi a altura real do leito sob o
+     redemoinho e limitei a profundidade — e essa correção era necessária
+     por outro motivo, mas → continuou.
+  e) polygonOffset -6, que ganharia qualquer briga de profundidade →
+     continuou, sem nenhuma diferença.
+
+Cada uma dessas eu teria jurado que era a causa. O que fechou o diagnóstico
+foi CONTAR os triângulos em vez de raciocinar sobre eles:
+
+    new THREE.ConeGeometry(r, h, 40, 8)  ->  320 triângulos
+    (40x8 quads precisam de ~600)
+    new THREE.ConeGeometry(r, h, 8, 3)   ->  24 triângulos para 24 quads
+
+Exatamente UM TRIÂNGULO POR QUAD. Um cone é um cilindro com radiusTop = 0,
+e no r169 a guarda que descarta o triângulo degenerado da fileira do ápice
+está descartando um em TODAS as fileiras. Metade da superfície nunca esteve
+no index buffer — nenhum estado de renderização poderia ter consertado
+aquilo.
+
+A correção é um `LatheGeometry` sobre um perfil de reta: o mesmo cone,
+gerado por código que não tem esse caso especial. É, aliás, o que o funil
+usava antes — por isso o defeito só apareceu quando a forma foi reescrita.
+
+(Repetindo a lição do bug do PI, dois passes atrás, com o mesmo formato:
+uma medição direta valeu mais do que cinco inferências corretas sobre o
+pipeline. Quando uma hipótese boa falha duas vezes seguidas, o próximo
+passo é medir, não hipotetizar de novo.)
+
+Correções que ficaram junto, e por quê:
+- A PROFUNDIDADE é limitada pela altura REAL do leito ali. Um buraco não
+  pode ser mais fundo que o chão em que ele é cavado. A primeira versão
+  limitou por `WATER.seabedY`, e isso ainda estava errado: seabedY é a BASE
+  do leito, mas o leito é deslocado por seabedHeight() e sobe em direção às
+  bordas do quadro — que é exatamente onde o redemoinho fica.
+- Um DISCO minúsculo sela o ápice, onde os triângulos do lathe têm área
+  zero e podem sumir em ângulos rasantes.
+- Um LÁBIO (toro fino) na boca. No concept a boca é um anel distinto — a
+  onda estacionária que um ralo levanta em volta de si. Sem ele o cone
+  encontra o plano de água numa circunferência matemática nua, que é a
+  única aresta da cena que leria como um corte. Ciano claro, não branco
+  puro: em branco cheio o anel virava o objeto mais claro do quadro e
+  puxava o olho para fora do tabuleiro.
+- O SWIRL não é pintado. A UV de um cone se estrangula no ápice, então
+  qualquer linha de largura constante em espaço de textura converge e
+  aliasa ao descer. Quem carrega o rodamoinho são os tubos que já existiam,
+  espiralando para dentro — agora seguindo a parede do cone na descida (a
+  profundidade de cada ponto é derivada do raio, então eles correm SOBRE a
+  parede em vez de flutuar por cima da boca). Na parede fica só o que
+  textura faz bem: um gradiente tonal (garganta escura -> aro claro) e umas
+  faixas largas e muito borradas.
+- A decoração do leito é PODADA num disco em volta do redemoinho. Ela é
+  espalhada antes da posição do buraco existir (ela sai do caminho da
+  esteira, definido bem depois), o leito ali está a ~1.6 da superfície e
+  uma alga passa de 2 unidades — algumas cresciam para dentro do funil e
+  ficavam balançando dentro do buraco.
+
+
+6. PALETA: AREIA, ÁGUA, CORAIS
+-------------------------------
+- Areia mais laranja, mas NÃO por deslocar a cor base. O leito é visto
+  através de um filme turquesa, que é o complemento do laranja: um
+  deslocamento uniforme é justamente o que a água cancela. O que sobrevive
+  ao filme é CONTRASTE, então o laranja entra como manchas largas e suaves
+  de areia mais quente contra areia mais fria, desenhadas com wrap (a
+  textura ladrilha 11x).
+- Água mais cristalina: alphas de raso e fundo abaixados, e os dois tons
+  levados para um ciano/azul mais saturado, para o quadro não cair no
+  cinza-esverdeado que areia quente sob água fria produz.
+- Corais e algas do leito bem maiores (o leito é o que o jogador está
+  descobrindo, então ele precisa recompensar quando o lixo sai).
+
+Testado com `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Teste de clique de ponta a ponta (fila -> boia na esteira -> coleta ->
+5/5 -> 4/5, munição 20 -> 15) confirmando que nada de mecânica mudou.
+
+O que NÃO foi feito (segue sinalizado):
+- Lixo especial / relíquia -> slots de item -> powerups temporários
+  clicáveis e empilháveis.
+- Tela de fim com o pinguim 3D comemorando, pontuação, tempo e ranking de
+  estrelas.
+- HUD de contadores (plástico / metal / dinheiro) com bounce por coleta.
+- Som: ambiente de mar e gaivota + trilha.
+- Remodelagem da popa do barco a partir do concept.
+- Linhas de fluxo da correnteza com recortes orgânicos escapando da
+  silhueta do canal.
+- Boia idêntica à referência vermelha/branca.
+- README parado no passe 2h.

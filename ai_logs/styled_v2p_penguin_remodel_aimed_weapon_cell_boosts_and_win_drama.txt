@@ -1,0 +1,243 @@
+styled_fof_version — v2p: o pinguim remodelado do moodboard, a arma que
+aponta para onde atira, boosts por célula, e a vitória encenada
+============================================================================
+
+
+1. O PINGUIM, REFEITO A PARTIR DO MOODBOARD
+---------------------------------------------
+O modelo anterior não estava longe em PEÇAS, estava errado em PROPORÇÃO. O
+que mudou e por quê:
+
+- O corpo é um OVO, mais largo embaixo e afinando até uma cabeça pequena e
+  arredondada, sem malha de cabeça separada. O personagem do moodboard não
+  tem pescoço nem esfera de cabeça: a silhueta inteira é uma gota, e é essa
+  forma única que faz ele ler como ESTE personagem em vez de um mascote
+  redondo genérico. O build anterior era esfera achatada + domo em cima, o
+  que lê como corpo-mais-capacete.
+  O afinamento é feito nos VÉRTICES, não por escala: escala não estreita
+  uma ponta só.
+- Os pés são PALHETAS LARANJAS apoiadas no chão, não quatro cilindros. E
+  são dois, não quatro — quatro perninhas cilíndricas eram a coisa mais
+  fora do modelo no build anterior.
+- A barriga é um oval claro grande cobrindo quase toda a frente, não um
+  remendo pequeno. É a segunda forma mais forte do personagem depois da
+  silhueta.
+- A bandana é branca com nó e duas pontas, e é TINGIDA pelo time. O nó é a
+  única massa saturada na cabeça, então é o que o olho pega da câmera de
+  jogo — o mesmo raciocínio de "pinte a face que aponta para o jogador" que
+  colocou a cor do time na tampa da latinha.
+- Olhos: ovais pretos simples, ABERTOS e BAIXOS. Olhos altos e juntos leem
+  como alerta ou bravo; o personagem do moodboard não é nem um nem outro.
+
+BUG que veio junto e derrubou o jogo: `animatePigProcedural` indexava
+`legs[2]` e `legs[3]` no ciclo de caminhada. Com dois pés em vez de quatro,
+o primeiro pinguim que deu um passo lançou
+"Cannot read properties of undefined". A altura de repouso do corpo também
+estava escrita em três lugares como o literal 0.42 — virou uma constante
+(BODY_REST_Y), porque a remodelagem moveu o corpo e não os três lugares que
+assumiam o valor antigo.
+
+A BAZUCA ficou mais curta (0.46 -> 0.34) e ganhou um FURO de verdade. A
+ponta antes era um cap sólido (funil ou cabeça de ímã), que lê como bocal,
+não como arma. A ponta de uma bazuca é um BURACO, e o buraco é o detalhe
+que faz um tubo ler como algo que dispara. Construído como um anel de boca
+levemente mais largo + um disco escuro recuado dentro dele: a esse tamanho,
+uma cavidade de verdade seriam uns poucos pixels escuros de qualquer jeito.
+
+
+2. A ARMA APONTA PARA ONDE ATIRA
+----------------------------------
+Antes o cano tinha exatamente duas poses: ombreada, ou virada para um
+ângulo fixo à frente durante o recuo. Então um pinguim atirando num alvo à
+sua esquerda continuava apontado para a frente e o projétil saía num ângulo
+que o modelo nunca mostrava — o tiro parecia sair pela lateral da arma.
+
+A correção separa duas coisas que estavam sendo confundidas. O PÁSSARO
+mantém a própria orientação (ele anda na esteira e o heading dele vem da
+tangente da esteira; girar o modelo inteiro para rastrear alvos deixaria a
+fila bêbada). Só o GRUPO DA ARMA gira, e gira para o alvo real — o mesmo
+vetor com que o projétil é criado, então cano e tiro não conseguem
+discordar por construção.
+
+Dois detalhes que decidem se isso funciona:
+
+  a) O alvo é convertido para o espaço do PAI DA ARMA antes dos ângulos
+     serem extraídos. O heading do rig muda em toda curva da esteira, e
+     ângulos medidos em espaço de mundo estariam errados por exatamente
+     esse heading.
+  b) O rider mantém um alvo PERMANENTE entre tiros em vez de escolher um
+     novo a cada frame. Sem isso o cano tremeria pelo tabuleiro a 60Hz em
+     vez de rastrear uma coisa e atirar nela. E o disparo usa o alvo que o
+     cano JÁ está mirando, em vez de escolher outro na hora — escolher de
+     novo ali era o que deixava mira e tiro discordarem.
+
+O recuo virou um OFFSET a partir da pose de mira, não uma pose absoluta,
+senão recuar brigaria com mirar.
+
+
+3. ESPUMA: FINA, E COM MAIS DE UMA FREQUÊNCIA DE MOVIMENTO
+------------------------------------------------------------
+Borda 10% mais fina, direto.
+
+O movimento é o item interessante. Aumentar a taxa do domain warp não
+resolvia a queixa de "muito lento" — porque com UM warp a uma taxa só, a
+rede inteira respira em uníssono, e o olho não lê isso como movimento de
+água. O que o olho precisa é das células mudando de forma UMAS EM RELAÇÃO
+ÀS OUTRAS, e isso só acontece quando a própria deformação tem mais de uma
+frequência passando por ela. Agora são dois warps, um lento e largo e um
+mais rápido e fino, somados.
+
+
+4. O REDEMOINHO: BORDA VIVA E PONTAS RESOLVIDAS
+-------------------------------------------------
+A borda agora MUDA DE FORMA. Cada harmônico avança na própria taxa, então
+os lóbulos deslizam uns pelos outros e o contorno nunca é o mesmo duas
+vezes. Um passe anterior tinha congelado esses harmônicos porque o anel de
+espuma em JS é construído dos mesmos três termos e os dois precisam
+concordar até o vértice — borda animada significa reconstruir o anel todo
+frame. Agora reconstrói: 128 vértices de um anel não é nada perto da cena,
+e uma borda que visivelmente muda de forma é a diferença entre água sendo
+puxada e um buraco carimbado na superfície. Só as POSIÇÕES são reescritas;
+índices e cores são criados uma vez.
+
+AS DUAS PONTAS DE UM ARCO SÃO PROBLEMAS DIFERENTES, e o briefing nomeia os
+dois:
+
+- A ponta INTERNA (no centro) é onde as seis se encontram. Ali ela é
+  afinada até nada: seis tubos cegos terminando em raio zero empilham as
+  tampas de topo umas nas outras e fazem um caroço bem onde o olho é
+  puxado.
+- A ponta EXTERNA (na água aberta) era um corte reto — um tubo para e a
+  seção transversal aparece como um disco duro, que lê como macarrão
+  cortado. Ela precisa de duas coisas separadas:
+    * um CAP ARREDONDADO, feito afinando o raio dos últimos poucos por
+      cento numa curva circular (sqrt) em vez de linear, para a silhueta
+      fechar em domo e não em ponta nem em disco;
+    * um FADE que corre dessa ponta para dentro no primeiro QUARTO do
+      comprimento, para o arco emergir da água em vez de começar num lugar
+      definido. O fade termina ANTES da borda do redemoinho, senão o traço
+      ainda estaria clareando ao cruzar para dentro do funil.
+
+O fade é alpha POR VÉRTICE — opacidade de material inteiro não consegue
+apagar só uma ponta de uma malha. Por isso o material usa vertexColors.
+
+
+5. O QUE ESTAVA ERRADO NO BARCO E NO HUD
+------------------------------------------
+A amurada flutuava: a saia externa descia até a base do casco enquanto a
+face interna parava no convés, e sempre que o convés era visto em ângulo
+baixo dava para ver luz por baixo. Uma parede tem que encostar no chão em
+que ela se apoia — os dois lados agora começam no convés.
+
+A borda da POPA (a que fica de frente para os slots e para o tabuleiro)
+virou um BUMP, quase só um lábio. É a aresta por onde o jogador olha para a
+área de jogo inteira, então qualquer altura ali é uma barra atravessando o
+meio da composição. As laterais continuam subindo de verdade, que é onde o
+barco lê como barco.
+
+O texto "5/5" estava sendo pintado POR CIMA pela espuma e pela boia.
+`depthTest:false` não bastava: ele impede o texto de ser OCLUÍDO, mas o
+three continua desenhando transparentes em ordem de distância, e a espuma e
+a boia — as duas transparentes, as duas mais perto da câmera — eram
+pintadas depois. É um elemento de UI, então ele foi forçado para o fim da
+ordem de desenho em vez de discutir com a ordenação.
+
+
+6. A ESPUMA DA PILHA PERTENCE À PILHA
+---------------------------------------
+O anel de contato pertence ao OBJETO, não ao lugar. Com a pilha vazia não
+há nada boiando ali, e um anel de espuma em água nua é a afirmação mais
+clara possível de que o efeito é um decalque e não contato — então ele some
+com a última boia e volta com a primeira devolvida.
+
+A boia que entra na correnteza sempre sai do TOPO da pilha (já saía), mas
+agora ela é LEVANTADA por cima. Antes ela deslizava em linha reta até a
+esteira — e uma reta entre o topo da pilha e a esteira ATRAVESSA a pilha de
+onde ela acabou de sair. O arco a tira do caminho e, de brinde, torna a
+escolha legível: o jogador vê uma boia específica sair do topo e viajar,
+em vez de uma aparecer na esteira.
+
+
+7. BOOSTS POR CÉLULA
+----------------------
+Antes caía um boost a cada N peças limpas. Agora só uma CÉLULA inteira
+limpa tem chance de soltar um — e nem toda célula paga.
+
+Isso é melhor que a regra que substitui: quatro peças da mesma cor juntas é
+um objetivo pequeno em que o jogador pode MIRAR, então a queda vira algo
+que se joga PARA conseguir, em vez de algo que acontece com você a cada N
+tiros. E não pagar sempre é o que mantém a sensação de achado.
+
+O estouro acontece NA CÉLULA, não no slot. O jogador está olhando para o
+tabuleiro quando isso dispara, não para o HUD, então o efeito precisa se
+anunciar onde os olhos dele já estão — o slot acendendo é a confirmação que
+ele vai encontrar um momento depois, não o aviso.
+
+Sobre o som novo: `boostDrop` é o único intervalo ASCENDENTE do conjunto
+inteiro. Todos os outros sons caem de altura (destruir, cair, aterrissar),
+porque são coisas terminando; um boost aparecendo é o único evento que é um
+ganho, e direção de altura é o jeito mais rápido de um jogador separar os
+dois sem prestar atenção no timbre. As estrelas também sobem uma terça a
+cada uma, para três estrelas lerem como fanfarra e não como o mesmo som
+três vezes.
+
+
+8. A VITÓRIA ENCENADA
+-----------------------
+A tela escrevia todos os números e estrelas de uma vez e aparecia. Tudo era
+verdade e nada era dramático: o olho tem um lugar só para pousar e o
+resultado inteiro já está lá.
+
+Agora é encenado. Cada estatística CONTA para cima com tique, as estrelas
+caem uma a uma em altura crescente, e a moeda soa no fim de cada linha.
+
+A encenação é uma TIMELINE PLANA de {quando, faça} em vez de setTimeouts
+aninhados. Aninhar torna a ordem implícita e impossível de retimar sem
+desmontar a corrente; uma lista plana se lê de cima a baixo e todo atraso é
+absoluto.
+
+Dois detalhes do contador: ele desacelera (ease-out), porque números que
+desaceleram leem como pousando num valor enquanto uma contagem linear lê
+como barra de progresso ainda rodando; e o tique só toca quando os DÍGITOS
+mudam, não uma vez por frame — a 60fps um tique por frame é um zumbido, não
+uma contagem.
+
+O FLASH atrás do pinguim: um conic-gradient girando, com duas animações
+independentes e de propósito em períodos diferentes (19s e 7.3s). Com
+períodos iguais, o giro e a respiração cairiam juntos todo ciclo e leriam
+como uma pulsação mecânica; incomensuráveis, nunca repetem a mesma
+combinação. A ESPESSURA dos raios é animada através de `@property --ray-w`
+como `<angle>` — uma custom property comum não é interpolável e pularia
+entre keyframes em vez de variar suavemente. Opacidade baixa (0.34), como
+pedido: enquadra a vitória sem competir com ela.
+
+
+9. PALETA
+-----------
+Times de magenta/verde para LARANJA/CIANO, em tudo: libré das latas e
+garrafas, famílias de matiz por instância, tiros, equipamento, bandana e os
+pontos do HUD.
+
+O PÁSSARO virou o azul vivo e saturado do moodboard, não um azul-marinho.
+Bico e pés numa laranja saturada — o único acento quente do personagem, que
+é justamente por que ele sobrevive em tamanho de miniatura contra água
+azul.
+
+E a água voltou a ser TRANSPARENTE. O passe anterior subiu os alphas para a
+água ler azul, e leu — escondendo o leito, que é a única coisa que toda a
+pilha de profundidade foi construída para mostrar. O azul agora vem dos
+tons em si e de `maxDepth` ser alcançado mais cedo, não de pintar por cima
+da areia.
+
+Testado com `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Teste de ponta a ponta (fila -> boia levantada do topo da pilha -> esteira
+-> mira -> tiro -> contadores) e a tela de vitória pela porta de debug
+`window.__forceWin`.
+
+O que NÃO foi feito:
+- Trilha sonora e ambiente (mar/gaivota). Os efeitos pontuais existem.
+- Assets 2D — ver `PRO_ROADMAP_E_ASSETS_2D.md`.
+- Tensão/timer, partículas de impacto no lixo, CTA/end card: os itens 2, 3,
+  4 e 6 da lista de prioridades daquele documento.
+- README parado no passe 2h.

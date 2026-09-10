@@ -1,0 +1,78 @@
+styled_fof_version — v2i: a rede de cáusticos deixou de ser Voronoi, um
+tubo por pilastra, esponjas laranja, barco sem o cubo
+============================================================================
+
+O CÁUSTICO: ABANDONEI O VORONOI, E ERA ISSO QUE PRECISAVA ACONTECER
+---------------------------------------------------------------------
+Vinha insistindo num campo de BORDAS de Worley/Voronoi. Células de Voronoi
+são polígonos convexos — as arestas são segmentos RETOS e as junções são
+cantos duros, por construção. Cada tentativa de esconder isso (elevar a
+borda a uma potência, borrar o campo, alargar a rampa) estava brigando com
+a primitiva em vez de trocá-la, e os cantos continuavam aparecendo como as
+"pontas" e "formas quadradas" reprovadas. Pós-processamento nenhum
+transforma polígono em bolha.
+
+Então as células passaram a ser DESENHADAS. E aqui teve uma segunda lição,
+porque a primeira tentativa de desenhar também saiu errada: desenhei bolhas
+SEPARADAS sobre fundo branco, esperando que o branco entre elas virasse a
+rede. Não vira. O vão entre quatro círculos vizinhos é uma estrela de
+pontas afiadas, não uma faixa — foi exatamente por isso que o jogo ficou
+cheio de estilhaços brancos angulares.
+
+O que funciona é o contrário: fundo escuro, bolhas que se SOBREPÕEM (raio
+maior que metade do espaçamento), cada uma preenchida de escuro E
+contornada de branco grosso. O contorno da célula que está por cima
+sobrevive, o resto é coberto — e o que resta é uma rede conectada de faixas
+curvas, sem um segmento reto ou um canto em lugar nenhum.
+
+Diagnóstico: em vez de continuar chutando parâmetros olhando o jogo,
+reimplementei o gerador em Python/PIL e olhei a textura sozinha. As duas
+falhas (bolhas separadas -> estrelas; sobreposição + contorno -> rede)
+ficaram óbvias em dois renders de 512px, depois de várias rodadas em que a
+mesma informação estava invisível no meio da cena.
+
+UM TUBO POR PILASTRA
+----------------------
+Erro estrutural corrigido: a grade já coloca QUATRO pilastras por célula, e
+a esponja desenhava quatro tubos por PILASTRA — dezesseis por célula. Além
+de custar quatro vezes a geometria, lia como papa no tamanho de celular e
+mentia sobre o dano: não dava para ver qual tubo tinha sido destruído.
+Agora cada pilastra (1 de vida) é UM tubo, então uma célula completa tem
+quatro, que é o que o brief pede. O mesmo para o coral: uma pilastra é um
+coral ramificado com dedos de ponta arredondada, seguindo o rascunho —
+espinho lê como arma, dedo bifurcado lê como coral.
+
+TIMES
+-------
+Esponja laranja, atacada pelo esquadrão laranja; coral verde, atacado pelo
+verde. A cor do alvo e a cor do chapéu passam a ser a mesma informação, que
+é o que torna a regra legível sem tutorial.
+
+ESPUMA DE CONTATO
+-------------------
+Faixa mais grossa e o decalque dimensionado ao próprio objeto em vez de a
+uma margem generosa em volta: qualquer folga ali vira, literalmente, o
+espaço entre o objeto e a espuma que o cliente apontou.
+
+BARCO
+-------
+O cubo no meio do convés era o "bow cap" — um bloco que ficava na ponta da
+proa antiga. Com o casco virado para mostrar a popa, aquela mesma posição
+virou o meio do espelho aberto, onde ele lia como um caixote largado ali.
+Removido. No lugar entraram muretas laterais (só nas laterais; o espelho
+continua aberto para o recife) e cores mais saturadas na madeira.
+
+Testado via `npm run build` + Playwright em 3 viewports: zero erros de JS ou
+de shader; clique de ponta a ponta sem mudança de mecânica.
+
+Pendente, e vale dizer com todas as letras:
+- O redemoinho ainda NÃO está como a referência (imagem 3). Hoje é um funil
+  girando com estrias; a referência é uma espiral pintada com faixas largas
+  de espuma que afunilam para um poço escuro. Isso pede uma textura de
+  espiral desenhada de propósito, não mais tuning do que existe.
+- A correnteza ainda tem o contorno de retângulo arredondado bem definido;
+  integrá-la à água pede que as linhas percam intensidade nas bordas do
+  canal, o que ainda não foi feito.
+- A seta continua o triângulo antigo; o chevron da referência não entrou.
+- O prego ainda não mantém o ângulo do disparo até o alvo.
+- O anel da boia ainda não some suavemente quando o pinguim sobe.

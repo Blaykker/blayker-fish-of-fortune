@@ -1,0 +1,278 @@
+styled_fof_version — v2o: a rede de espuma Wind Waker, o redemoinho em três
+camadas, volta ao tiro, boosts, HUD, tela de vitória e a troca de paleta
+============================================================================
+
+Passe grande. Os itens estão agrupados pelo problema que resolvem, não pela
+ordem em que foram pedidos.
+
+
+1. A ESPUMA: DE CONTORNOS PARA UMA PARTIÇÃO
+--------------------------------------------
+O passe anterior desenhava a espuma como ISO-CONTORNOS de um campo fBm.
+Isso dá curvas fechadas, suaves e orgânicas — mas dá BOLHAS: ilhas de
+branco que se afastam e se reencontram, sem nenhuma garantia de que duas
+delas se conectem.
+
+A referência (a água do Wind Waker) não é bolha. É uma PARTIÇÃO: cada
+mancha de azul é uma célula, toda célula é fechada, e o branco é uma rede
+única e contínua. Só uma construção celular tem essa propriedade embutida,
+então isto voltou para Voronoi — a primitiva que um passe anterior tinha
+rejeitado.
+
+Ela foi rejeitada por um motivo real: célula de Voronoi é polígono convexo,
+de arestas retas e cantos vivos. Duas coisas resolvem isso aqui, e nenhuma
+delas é um botão de ajuste:
+
+  a) O DOMÍNIO da consulta é deformado por fBm antes das células serem
+     encontradas. A partição continua exata — toda célula ainda fecha — mas
+     as arestas viram curvas, porque reta em espaço deformado é curva em
+     espaço de mundo. É o mesmo domain warp de antes, aplicado agora a uma
+     construção que realmente precisa dele.
+
+  b) O campo medido é DISTÂNCIA ATÉ A ARESTA MAIS PRÓXIMA, não F2 - F1.
+     F2 - F1 varia conforme os dois sítios estão posicionados, então uma
+     faixa desenhada a partir dele muda de largura ao longo do próprio
+     comprimento e estrangula nas junções. Uma distância de aresta de
+     verdade dá um traço de largura CONSTANTE — e um traço grosso de
+     largura constante passando por uma junção em Y se FUNDE num blob
+     redondo sozinho, que é exatamente o que as junções da referência
+     parecem. O arredondamento é consequência da espessura do traço, não de
+     um filtro.
+
+Detalhe de implementação que custou um bug: a segunda passada varre 5x5
+enquanto a primeira varre 3x3. A aresta mais próxima pode pertencer a um
+sítio a duas células de distância quando o sítio mais próximo cai perto de
+um canto, e com 3x3 aparecem mordidas visíveis na rede onde isso acontece.
+
+Duas iterações de calibragem, ambas erradas por excesso na primeira: a
+faixa saiu grossa demais (o quadro inteiro branco) e depois o interior das
+células saiu lavado demais. O número que decide tudo é a meia-largura da
+borda: a referência fica em torno de um décimo de uma célula.
+
+BUG DE VERDADE ACHADO AQUI: os "flecks" (respingos brancos) nunca
+apareceram. `fbm()` aqui soma três oitavas em 0.5/0.25/0.125, ou seja, o
+máximo possível é 0.875 — e o threshold estava em 0.93. O efeito estava
+morto desde que foi escrito, e sem nenhum erro para denunciar. Vale como
+lembrete: um threshold sobre um campo procedural só significa alguma coisa
+se você souber a AMPLITUDE do campo.
+
+
+2. O REDEMOINHO, NAS TRÊS CAMADAS DO CONCEPT
+----------------------------------------------
+A folha de concept é explícita sobre a construção, e vale seguir à risca
+porque cada camada faz um trabalho diferente:
+
+  Camada 1 — FUNIL: o cone escuro, o valor mais escuro do quadro.
+             Profundidade.
+  Camada 2 — ESPUMA DO MEIO: água batida dentro da boca. Movimento.
+  Camada 3 — SUPERFÍCIE EXTERNA: arcos brancos grossos na água plana em
+             volta, curvando para dentro. A ligação com o resto do mar.
+
+Sobre os ARCOS, que era o pedido específico: eram sete tubos, cada um
+girando na própria taxa POR CIMA da rotação do grupo. Isso é literalmente a
+dessincronia reclamada — a qualquer momento os arcos estavam em ângulos sem
+relação e o redemoinho lia como sete coisas separadas girando perto uma da
+outra.
+
+Agora existe UMA transformação. Todos os arcos são filhos de um grupo, os
+ângulos relativos entre eles são fixos para sempre, e eles só conseguem se
+mover como uma peça só. A velocidade continua variável — foi pedido — mas
+ela varia PARA O GRUPO (duas senoides de períodos diferentes, somadas, que
+dão uma velocidade que acelera e alivia sem repetir num ciclo curto nem
+inverter). "Velocidade variável, porém todos juntos" só é satisfazível se a
+variação for aplicada a um relógio compartilhado, e não a cada peça.
+
+Cada arco vai até raio ZERO, então as pontas se encontram no centro em vez
+de pararem antes e deixarem um disco pelado no meio. Os tubos são afinados
+ao longo do comprimento: um tubo de espessura constante terminando em raio
+zero empilha seis pontas cegas no mesmo lugar e faz um caroço.
+
+A BORDA não é mais um círculo. Um círculo perfeito é a única forma que não
+consegue ler como água sendo puxada por um ralo — lê como um disco
+apoiado por cima. Três harmônicos do ângulo empurram a borda para dentro e
+para fora; como o raio continua positivo e unívoco, a curva segue simples e
+fechada, então nada a jusante precisa lidar com uma fronteira que se
+autointersecta.
+
+Os harmônicos são ESTÁTICOS em ângulo, e é isso que faz tudo alinhar: o JS
+constrói o anel de espuma da camada 3 com os mesmos três termos que o
+shader usa para recortar o buraco (vortexWobble), então geometria e shader
+concordam sobre onde está a borda até o vértice. Uma borda animada exigiria
+reconstruir o anel todo frame para manter esse acordo, e o movimento já é
+carregado pelos arcos.
+
+O anel de espuma some para fora por ALPHA POR VÉRTICE (atributo de cor com
+itemSize 4), não por textura: a borda já é uma curva irregular, e um fade
+radial em textura teria que ser circular — recolocando exatamente a
+silhueta redonda que o wobble existe para remover.
+
+O toro do lábio foi REMOVIDO. Ele era um círculo perfeito, e a camada 3
+agora faz esse trabalho com uma borda irregular.
+
+
+3. VOLTA AO TIRO
+-----------------
+A coleta por sucção foi construída e agora desfeita. O motivo é de tempo:
+puxar o lixo obrigava a apagar o pilar no INÍCIO do voo, então o tabuleiro
+esvaziava um tempo antes de qualquer coisa chegar à ferramenta, e os dois
+eventos nunca se alinhavam. O tiro devolve causa antes de efeito — o
+projétil chega, ENTÃO o lixo sai — que é o timing em torno do qual todo o
+loop de feedback (som, contador, recuo) foi escrito.
+
+Cada equipe atira na própria cor. As duas foram escolhidas longe uma da
+outra no círculo cromático porque essa é a única pista dizendo de qual
+esquadrão é um tiro no ar quando vários se cruzam.
+
+O cone de rastro invertido (da sucção) foi mantido no código, sem uso e
+comentado: a leitura de sucção pode voltar como powerup (um ímã que puxa
+uma fileira inteira), e o raciocínio sobre a forma é a parte que deu
+trabalho.
+
+
+4. HIGHLIGHT DE PLÁSTICO EM TODOS OS MODELOS
+----------------------------------------------
+MeshToonMaterial não tem especular NENHUM: o fragment shader dele termina
+em `outgoingLight = directDiffuse + indirectDiffuse + emissive`, sem termo
+especular em lugar nenhum, então não há o que aumentar. O brilho tem que
+ser somado a essa linha.
+
+A luz usada é uma direção FIXA EM ESPAÇO DE VISTA, não o sol da cena. Isso
+é deliberado e é como plástico estilizado costuma ser sombreado: um brilho
+ancorado na câmera fica no mesmo lugar em todo objeto, independente de onde
+cada um está ou para onde está virado, então um tabuleiro de 676 peças lê
+como um material pegando uma luz — e não como 676 objetos brilhando cada um
+no seu horário. Ancorado no sol real, o brilho gira junto com os objetos, o
+que lê como molhado, não como plástico.
+
+ERRO DE CALIBRAGEM, e vale registrar porque a razão é estrutural: a
+primeira versão usou 0.5/0.16 de força e LAVOU O QUADRO INTEIRO. O termo é
+somado direto em outgoingLight, DEPOIS da rampa toon — ele não compete com
+a iluminação, ele empilha em cima dela. Em 0.5 o brilho sozinho já é metade
+do branco total numa superfície que a rampa já deixou quase branca. Um
+brilho cel só precisa ser um tico mais claro que a faixa de topo do
+material; os valores finais são 0.16/0.05.
+
+
+5. NADA ATRAVESSA A SUPERFÍCIE
+-------------------------------
+Coral saindo da água lê instantaneamente como pedra em terra firme e destrói
+a profundidade que toda a pilha de água existe para construir. A decoração é
+espalhada em alturas aleatórias e o leito SOBE em direção às bordas do
+quadro, então os dois juntos empurravam as peças mais altas para fora da
+água no raso.
+
+Corrigido por ESCALA, não por reposicionamento nem por descarte: mover
+deixaria as peças altas flutuando fora do leito, e descartar tiraria o
+recife exatamente onde a água é mais limpa e o jogador mais olha. Cada peça
+mede a própria caixa envolvente e encolhe até caber sob a linha d'água.
+
+
+6. ESPAÇAMENTO DAS BOIAS — UM NÚMERO DERIVADO, NÃO AJUSTADO
+-------------------------------------------------------------
+O raio externo de uma boia é BOIA_RADIUS + BOIA_TUBE = 1.19, então duas se
+tocam em 2.38. `minBeltGap` foi de 2.9 para 2.55 — logo acima do contato.
+Abaixo de 2.38 não é escolha de tuning, é bug de sobreposição, e vale a
+pena o comentário no config dizendo isso para ninguém "afinar" o valor
+depois sem saber onde é o fundo do poço.
+
+
+7. BOOSTS, CONTADORES E TELA DE VITÓRIA
+-----------------------------------------
+Os cinco slots tracejados eram placeholder desde a v1. Agora guardam os
+powerups.
+
+O princípio que organiza os boosts: tudo que um boost faz é expresso como
+um MULTIPLICADOR ou um contador que as regras normais do jogo já leem
+(`boosts.fireRate` divide o intervalo de tiro, `boosts.multiShot` adiciona
+uma segunda chamada à mesma função de spawn). Nada ramifica em "tem boost
+ativo?" no ponto de uso — então um boost não consegue dessincronizar a
+regra que ele modifica, e dois boosts iguais empilham por construção, sem
+caso especial.
+
+Detalhe: a taxa de tiro é DIVIDIDA pelo multiplicador, não subtraída da
+base. "Duas vezes mais rápido" tem que continuar sendo duas vezes mais
+rápido se a base for reajustada depois, e uma subtração ficaria negativa no
+dia em que alguém baixasse a base.
+
+A linha do row continua `pointer-events: none` — a caixa invisível dela
+atravessa a tela inteira e engolia todo toque destinado a um pinguim da
+fila. Só os slots reativam ponteiro.
+
+O pop do contador precisa remover a classe, FORÇAR UM REFLOW e readicionar.
+Sem o reflow o browser junta remove+add em "nada mudou" e a animação só
+roda uma vez na vida.
+
+A tela de vitória tem renderer próprio. A câmera do jogo é ortográfica,
+enquadrada na esteira e apontada para um tabuleiro que, por definição, está
+vazio quando essa tela aparece. O renderer é construído uma vez e reusado:
+um contexto WebGL por vitória vaza até o browser começar a derrubar o mais
+antigo — que é o do jogo.
+
+O pinguim é girado 180 graus. buildPigMesh aponta o bicho para -Z (para o
+tabuleiro em que ele atira), então, colocado sem rotação, a tela mostrava
+as costas dele com a arma saindo por trás da cabeça.
+
+O ranking usa DUAS coisas independentes, porque o pedido cita velocidade e
+não desperdiçar tiro. A precisão é limitada em 1 para que uma rajada de
+multishot que passe do alvo nos últimos lixos não empurre a nota acima de
+uma run perfeita.
+
+
+8. PALETA
+----------
+Times de laranja/azul para MAGENTA-VIOLETA vs VERDE-CIANO. A troca também
+serve melhor ao cenário do que a anterior: o mar é azul, e um time azul em
+cima de água azul competia com o próprio fundo. Magenta e verde-primavera
+estão os dois longe do matiz da água, e quase opostos entre si, o que
+mantém os dois separados também para quem tem daltonismo.
+
+O PÁSSARO ficou ardósia-marinho para os dois esquadrões. Com as equipes em
+magenta e verde, um corpo azul era um TERCEIRO matiz num personagem cuja
+função inteira é anunciar um de dois. Corpo quase neutro deixa o
+equipamento carregar a leitura de time sem disputa.
+
+A latinha ganhou leitura de ADESIVO: as faixas de alumínio nu ficam de
+verdade em cima e embaixo, o rótulo entra entre elas com borda dura, e uma
+régua clara corre em cada emenda — um rótulo impresso pega luz na própria
+emenda, e é essa emenda que diz "colado" em vez de "moldado colorido".
+
+Água: `maxDepth` de 2.1 para 1.45. Em 2.1 a área de jogo inteira ficava na
+primeira faixa de profundidade, então a baía renderizava quase toda no tom
+raso e o azul profundo só aparecia nos cantos distantes — o gradiente
+existia mas nunca era visto. Puxar a ponta longe da rampa para dentro é o
+que de fato faz a água ler como azul.
+
+
+9. O BARCO
+------------
+A amurada era uma ExtrudeGeometry do contorno do casco com o contorno
+interno furado. Isso produz uma parede de altura CONSTANTE em toda a volta,
+e aí um par de caixas arredondadas RETAS era deitado nos flancos para
+sugerir corrimão — que é exatamente a "parede fina e reta" reclamada: as
+caixas são retas enquanto o casco afunila, então elas cruzam a linha do
+próprio casco e leem como andaime aparafusado.
+
+A amurada de um barco de verdade é baixa na popa e sobe em direção às
+alhetas, e ela segue a curva do casco porque ela É a aresta de cima do
+casco. Extrusão não faz isso — a profundidade dela é um número só. Então a
+parede é gerada direto: percorre-se o contorno e, em cada amostra, emite-se
+uma coluna de quatro vértices cuja altura de topo vem de uma FUNÇÃO da
+posição. Três tiras por amostra (face externa, tampo, face interna), e a
+parede segue o casco exatamente porque é gerada dos mesmos pontos que ele.
+
+Espessura de 1.15 para 0.62: em 1.15 o aro comia uma faixa larga de convés
+em toda a volta, e os slots de item acabavam em cima dele.
+
+Testado com `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Teste de clique de ponta a ponta (fila -> boia na esteira -> tiro ->
+contador subindo -> 5/5 -> 4/5) e a tela de vitória renderizada por uma
+porta de debug (`window.__forceWin`) — que existe justamente para não
+precisar limpar 676 lixos à mão a cada ajuste de layout dela.
+
+O que NÃO foi feito:
+- Som (ambiente de mar/gaivota + trilha).
+- Assets 2D pré-renderizados — ver o documento separado
+  `PRO_ROADMAP_E_ASSETS_2D.md`, que é a resposta à pergunta de avaliação e
+  a lista de peças para encomendar.
+- README parado no passe 2h.

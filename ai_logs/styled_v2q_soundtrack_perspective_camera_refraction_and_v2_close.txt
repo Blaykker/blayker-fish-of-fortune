@@ -1,0 +1,266 @@
+styled_fof_version — v2q: trilha sonora, câmera em perspectiva, refração
+submersa, correnteza plástica — e o fechamento da V2
+============================================================================
+
+
+1. ÁUDIO: UM MIX DE VERDADE, NÃO UM VOLUME SÓ
+-----------------------------------------------
+Antes cada voz multiplicava `masterVolume` por conta própria e conectava
+direto no destino. Isso tem duas consequências que só aparecem quando
+existe música: balancear trilha contra efeitos era impossível sem editar
+todos os call sites, e os dois só conseguiam se mover juntos.
+
+Agora são três barramentos — master, music, sfx. Abaixar os efeitos sob uma
+fanfarra é um `setValueAtTime`, não uma mudança em vinte funções.
+
+O CONTROLE DE VOLUME DO TIRO, que foi o pedido específico, não é um volume.
+Cinco riders atirando várias vezes por segundo colocam uma dúzia de blips
+sobrepostos nos mesmos milissegundos, e o Web Audio simplesmente SOMA — ou
+seja, o tiro não estava "um pouco alto", ele estava N vezes alto, e ficava
+mais alto quanto melhor o jogador estivesse indo. Baixar o master
+consertaria o pico deixando todo o resto mais baixo, que é a troca errada.
+
+A solução é VOICE LIMITING: cada cue declara um espaçamento mínimo e um
+teto de quantas podem soar ao mesmo tempo. Um tiro que chega dentro da
+janela é DESCARTADO, não enfileirado — o jogador não consegue ouvir a
+diferença entre oito tiros simultâneos e três, então os outros cinco são só
+headroom sendo gasto. É o mesmo raciocínio de voice stealing de um engine
+de áudio de jogo, em umas dez linhas.
+
+A trilha roda por elementos `<audio>` e não por AudioBuffer: o loop tem
+4.5MB, e `decodeAudioData` guardaria isso descomprimido em memória (minutos
+de estéreo float32 são dezenas de megabytes) e travaria enquanto decodifica.
+Um `<audio>` faz streaming, e `MediaElementSource` ainda roteia pelo mesmo
+barramento, então a música é mixada e abaixada como qualquer outra voz.
+
+Detalhe de plataforma: reprodução não pode começar antes de um gesto do
+usuário — todo browser bloqueia. Então `playGameplay()` é chamado do
+PRIMEIRO toque, e continua sendo chamado em todo toque de propósito: ele sai
+imediatamente se o loop já está tocando, e assim uma aba que ficou em
+segundo plano e teve o contexto suspenso recupera a música na próxima
+interação em vez de ficar muda pelo resto da partida.
+
+Os fades usam o relógio de áudio (`linearRampToValueAtTime`), não
+setTimeout: um fade em timer de JS engasga sob carga, e este é preciso na
+amostra e não custa nada por frame.
+
+
+2. A CÂMERA: SEMI-ISOMÉTRICA, MAS COM PERSPECTIVA DE VERDADE
+--------------------------------------------------------------
+Era uma `OrthographicCamera`, que por definição não tem perspectiva
+NENHUMA: arestas paralelas continuam paralelas, peças perto e longe têm o
+mesmo tamanho, e o tabuleiro lê como um padrão chapado em vez de uma coisa
+com profundidade.
+
+Enfatizar o 3D sem perder a leitura isométrica do xadrez só é compatível de
+um jeito: câmera em PERSPECTIVA com LENTE LONGA, puxada para bem longe.
+
+O campo de visão estreito é o truque inteiro. A convergência pela largura
+do tabuleiro fica em poucos por cento: o suficiente para o lixo da borda
+distante ser visivelmente menor e os pilares se inclinarem para fora do
+centro — que é o que vende a profundidade — mas longe de dobrar a grade
+numa vista com ponto de fuga. Uma lente grande-angular perto daria
+perspectiva dramática e destruiria a leitura iso no mesmo movimento.
+
+CALIBRAGEM, e errei por excesso na primeira: comecei em 20 graus e a DOCA —
+a coisa mais próxima da câmera — ficou ampliada o bastante para tomar quase
+metade do quadro e espremer o tabuleiro no terço de cima. Estreitar a lente
+para 14 puxa a câmera mais para trás para o mesmo enquadramento, o que
+reduz a diferença de tamanho perto/longe mantendo a convergência. É a mesma
+razão pela qual fotografia esportiva e de natureza usa teleobjetiva: para
+profundidade comprimida e legível, não dramática.
+
+A distância é DERIVADA, não dialada: a uma dada FOV, a distância que
+enquadra uma largura fixa de mundo é `largura / (2 * tan(fov/2))`. Assim a
+composição bate com o que o frustum ortográfico mostrava e todo offset
+calibrado contra ela continua valendo. E o cálculo resolve o meio-ângulo
+HORIZONTAL — a FOV fixa de uma câmera em perspectiva é a vertical, então
+num quadro retrato estreito o tabuleiro cresceria e encolheria com a razão
+de aspecto do celular, que é um bug que o build ortográfico não tinha como
+ter.
+
+
+3. REFRAÇÃO SUBMERSA SEM UM SEGUNDO RENDER
+--------------------------------------------
+O jeito honesto de distorcer o que está sob a água é renderizar a metade
+submersa para um target e amostrar de volta com UV deslocada. Este projeto
+apagou de propósito o seu único passe de render target (o depth pre-pass)
+exatamente pelo motivo que valeria de novo: um render de cena inteiro a
+mais por frame, num celular, para um efeito que é estilizado de qualquer
+jeito.
+
+Então a distorção é aplicada onde ela de fato aparece. Dois lugares
+carregam quase toda a leitura:
+  - a consulta de textura do LEITO, deslocada em espaço de UV, que faz a
+    areia e o padrão de luz assado nela nadarem; e
+  - um BALANÇO lateral nos props submersos, escalado pela altura do
+    vértice acima da base, para o recife inclinar no mesmo ritmo.
+
+Duas senoides cruzadas, não um lookup de ruído: isso roda pela baía inteira
+todo frame, e duas senoides são um punhado de instruções onde um fbm de
+duas oitavas seriam dezenas. As frequências são propositalmente não
+harmônicas, para o padrão nunca se resolver numa grade visível. A amplitude
+é pequena de propósito — refração real por uma superfície ondulada desloca
+por uma fração de comprimento de onda, e qualquer coisa mais forte deixa de
+ler como água e passa a ler como calor.
+
+O balanço dos props usa `modelMatrix[3]` (a translação em mundo da malha)
+como fase, o que dá uma fase por objeto de graça, sem um uniform por
+instância.
+
+
+4. A CORRENTEZA: INTERMITÊNCIA E DERIVA DE FAIXA
+--------------------------------------------------
+Duas coisas estavam erradas nos traços, e são a mesma queixa dita duas
+vezes: as marcas formavam uma linha contínua em toda a volta, e cada marca
+ficava na própria faixa a vida inteira.
+
+Linha contínua lê como faixa pintada de asfalto. Água em movimento de
+verdade mostra INTERMITÊNCIA — espuma junta, risca, some, e junta de novo
+em outro lugar. Então os traços são cortados em segmentos com vãos reais
+entre eles, e tanto os comprimentos quanto os vãos são aleatórios, para o
+olho não achar um período. O canal fica cerca de metade vazio a qualquer
+momento; isso é a intermitência.
+
+A parte "plástica" é a deriva de faixa. Cada traço é desenhado como uma
+CURVA que começa numa faixa e termina em outra, então a marca visivelmente
+migra enquanto viaja; onde duas convergem para a mesma faixa elas se
+sobrepõem e leem como fusão, e onde uma sai de uma faixa lê como
+separação. Nada é simulado — a textura só rola — mas traços que cruzam
+faixas produzem a leitura de juntar-e-separar de graça, coisa que nenhuma
+quantidade de traços paralelos retos jamais daria. Os controles da bezier
+fazem a deriva entrar e sair suave, e é isso que faz a migração ler como a
+marca sendo CARREGADA e não pilotada.
+
+V é o eixo transversal do canal (ver a geração de UV em buildTrackVisual),
+então um traço mudando o Y dele aqui é exatamente um traço mudando de
+faixa.
+
+
+5. O FADE DA ESTEIRA
+----------------------
+As tampas das pontas foram REMOVIDAS. Eram quads chapados selando as duas
+extremidades abertas da fita, e uma tampa é uma aresta dura por definição —
+é precisamente o "acabando reta" recusado. Com a fita sumindo em fade não
+há o que selar: quando a geometria termina, ela já está totalmente
+transparente.
+
+O fade é ALPHA POR VÉRTICE, e é aqui e não na textura por um motivo
+específico: a textura ROLA. Qualquer fade pintado nela viajaria pelo loop
+junto com as marcas em vez de ficar na ponta da fita, que é o único lugar
+onde ele precisa ficar. O three multiplica uma cor de vértice vec4 dentro
+de `diffuseColor` incluindo o alpha, então um atributo RGBA é uma máscara
+de opacidade por vértice sem custar draw nem textura extra.
+
+
+6. O REDEMOINHO: CONCÊNTRICO NO ÁPICE
+---------------------------------------
+Toda camada estava ancorada na superfície, sobre o centro do buraco em X/Z.
+Isso é concêntrico com a BOCA, e a boca não é onde o redemoinho converge —
+o ápice do cone é, uma profundidade inteira abaixo. Então os arcos
+espiralavam para um ponto na água enquanto o funil drenava para um ponto
+embaixo dele, e os dois centros liam como um desalinhamento mesmo sem nada
+estar fora de eixo.
+
+A ESPUMA DO MEIO deixou de ser um LatheGeometry por um motivo estrutural,
+não estético: o raio de um lathe é função só da altura, então toda seção
+horizontal dele é por definição um círculo perfeito. A borda interna que o
+briefing quer que se mexa constantemente não é expressável nesse
+primitivo. Construída à mão, ela é um anel de vértices cujo raio é função
+do ÂNGULO e do tempo — a única coisa que o lathe nunca poderia fazer. E
+todos os vértices do ápice são o MESMO ponto, o mesmo do funil, então a
+superfície converge exatamente onde o cone converge.
+
+Os harmônicos da borda interna são deliberadamente diferentes dos da borda
+externa: duas bordas ondulando nos mesmos termos se moveriam como uma forma
+só e o vão entre elas ficaria constante, que é a cara de um contorno
+desenhado e não de duas superfícies independentes de água.
+
+
+7. A ESPUMA: SUAVE SEM PERDER SATURAÇÃO
+-----------------------------------------
+O traço era um branco chapado único, e é isso que fazia o contraste ler
+como duro por mais fina que a linha ficasse — um branco puro e uniforme ao
+lado de azul saturado é a aresta de maior contraste disponível no quadro, e
+afinar só produz uma aresta de contraste máximo mais fina.
+
+Então a própria COBERTURA da espuma agora é modulada por um campo de ruído
+ao longo da borda: o traço afina, engrossa e se dissolve pela metade em
+pontos. Isso faz duas coisas de uma vez — derruba o pico de contraste sem
+dessaturar nada, e faz a rede ler como espuma juntando de forma irregular
+em vez de um contorno desenhado. O branco também é quebrado na direção do
+tom frio e da água por baixo; branco puro fica reservado para os poucos
+pontos mais claros.
+
+E a espuma não vai mais a alpha 1: em opacidade total ela era uma tampa
+sólida sobre o leito, e a espuma da referência deixa a água ler fracamente
+através.
+
+
+8. PALETA E MATERIAIS
+-----------------------
+Ciano empurrado para o VERDE, laranja para o AMARELO, os dois em croma
+alto. O par continua quase oposto no círculo (verde-primavera contra
+âmbar), que é o que mantém os times separáveis, mas nenhum dos dois é agora
+vizinho do azul da água — o ciano anterior era, e num mar azul um time
+ciano está brigando com o próprio fundo por atenção.
+
+O BARCO ficou mais escuro e aquecido para o rosa. Um barco de tom claro sob
+céu claro era a maior massa mais clara do quadro depois da espuma, então
+puxava o olho para a doca e para longe do tabuleiro. Baixar o valor dele o
+devolve ao papel de moldura de primeiro plano, e o rosa no marrom é o que
+impede a madeira escura de ler como lama cinza.
+
+A GARRAFA ficou translúcida — PET é o único material do tabuleiro que
+deveria deixar a água atrás passar, e agora que a água voltou a ser
+transparente há o que ver através. Mas SEM `depthWrite: false`, que seria o
+movimento padrão para transparência: são quatro por célula e passariam a
+desenhar umas através das outras na ordem que a ordenação escolhesse, o que
+cintila conforme as distâncias da câmera mudam. Com depth write ligado, uma
+garrafa oclui a de trás e só a ÁGUA aparece através — que é o efeito que se
+queria de qualquer forma.
+
+A FITA DA BOIA ficou branca e mais grossa (0.68 -> 1.05 da largura do
+tubo). Uma boia é vermelha e branca, e o amarelo estava lendo como uma
+terceira cor de time num prop que não pertence a time nenhum. A 0.68 as
+faixas liam como listrinhas pintadas, não como o quartejamento do anel.
+
+
+9. A REGRA DE CONTORNO DE TEXTO
+---------------------------------
+Todo texto carrega contorno BRANCO — exceto texto que já é branco, que
+carrega um NAVY. A exceção não é arbitrária, é a lógica da própria regra: o
+contorno existe para separar o glifo do que está atrás, e um contorno
+branco em texto branco não separa nada.
+
+Vive numa função só, e não em duas linhas copiadas em cada builder de
+canvas, porque no instante em que houver três deles um vai ficar de fora e
+o jogo passa a ter dois estilos tipográficos. (No CSS, quatro text-shadows
+deslocados são o único jeito de obter contorno real em texto do DOM sem o
+afinamento do `-webkit-text-stroke`.)
+
+O número de munição também deixou de trocar de cor por esquadrão. A
+contagem é informação sobre o JOGO, não sobre o time — o time já é dito
+pelo equipamento, pela bandana e pela mochila — e trocar as cores do número
+significava que o único número que o jogador lê sob pressão mudava de
+aparência dependendo de quem ele escolheu.
+
+BUG DE ORDEM que isso causou: `drawOutlinedText` foi escrita perto de
+`drawAmmoCanvas`, mas `drawTrayLabelCanvas` roda em escopo de módulo bem
+antes disso — e a constante da cor navy é um `const`, então a TDZ disparou
+antes de qualquer coisa renderizar. O erro em produção era
+"Cannot access 'Bx' before initialization", inútil por causa da
+minificação; rodar o servidor de dev (não minificado) deu o nome real em
+uma tentativa. Vale como método: quando um erro de build aparece com nome
+minificado, rodar o dev server é mais rápido que ler o bundle.
+
+Testado com `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+
+O que NÃO foi feito, e é a lista do próximo passe (juice / final touch):
+- Partículas de impacto e texto flutuante no lixo destruído.
+- Movimento de câmera (push-in de abertura, zoom na vitória, shake em
+  combo).
+- Tensão: timer ou maré.
+- CTA / end card.
+- Assets 2D — ver `PRO_ROADMAP_E_ASSETS_2D.md`.

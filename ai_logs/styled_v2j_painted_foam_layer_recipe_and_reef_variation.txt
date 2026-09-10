@@ -1,0 +1,92 @@
+styled_fof_version — v2j: espuma pintada em vez de derivada, receita de
+camadas, variação por instância no recife, correções de arma e sombra
+============================================================================
+
+ESCOPO DESTE PASSE, DITO NA FRENTE
+------------------------------------
+O brief tinha ~18 itens. Fiz seis bem e deixei quatro de fora de propósito,
+porque entregá-los pela metade custaria mais do que adiá-los: HUD de
+contadores, tela de vitória com ranking, trilha sonora, e o remodelo da
+popa a partir do concept. Estão listados no fim.
+
+A ESPUMA: A TERCEIRA ABORDAGEM, E POR QUE AS DUAS PRIMEIRAS FALHARAM PELO
+MESMO MOTIVO
+--------------------------------------------------------------------------
+Tentativa 1: bordas de Voronoi. Tentativa 2: células desenhadas que se
+sobrepõem, com contorno. As duas DERIVAM a espuma de uma estrutura de
+células — e uma estrutura de células é uma PARTIÇÃO do plano. Numa partição
+as formas são o que sobra entre vizinhos: elas se encontram em junções e
+terminam em cunhas. Era daí que vinha toda "ponta", nas duas tentativas.
+
+A água do Wind Waker não é uma partição. É um espalhado de traços
+arredondados independentes que por acaso se sobrepõem — e um traço isolado
+PODE ser um oval perfeito, justamente porque não está dividindo espaço com
+ninguém.
+
+Então a espuma passou a ser PINTADA como pinceladas: ovais alongados,
+rotacionados, com raio levemente ondulado, borrados e sobrepostos em três
+escalas. Toda silhueta é fechada e suave por construção, e onde duas
+pinceladas se fundem a união continua suave porque as duas já eram.
+
+No shader isso mudou uma coisa importante: a textura agora CONTÉM as
+formas, então o passo é um remap suave e não um threshold duro. Cortar duro
+um campo de formas decepa as pontas dos ovais e devolve os cantos — que era
+exatamente o que eu estava tentando evitar ao pintá-los.
+
+A RECEITA DE CAMADAS
+----------------------
+Reorganizei a cena na ordem que o cliente descreveu, com as opacidades que
+ele pediu, e a diferença conceitual que faltava: a camada de cáustico do
+FUNDO e a camada de espuma da SUPERFÍCIE não são a mesma textura em
+tamanhos diferentes — são coisas diferentes. A do fundo é luz que já
+atravessou a coluna d'água, então é uma rede macia e muito borrada, em
+opacidade baixíssima ("só para dar essa camada de estilo"). A da superfície
+é espuma, então é pintada, oval e nítida. Um passe anterior desenhou as
+duas com a mesma nitidez, e o resultado eram dois padrões brigando em duas
+profundidades e lendo como nenhum dos dois.
+As transparências foram derrubadas bastante (raso 0.26 / fundo 0.46) porque
+a receita é explícita: tem que dar para ver a areia, os corais e os peixes
+por baixo.
+
+RECIFE
+--------
+Pilastras maiores e espremidas (gap quase zero), com jitter de rotação,
+escala e COR por instância. O recife são 676 cópias de uma malha só: sem
+variação o olho acha a repetição imediatamente. Como a matriz de instância
+já está sendo escrita, a variação sai de graça; a cor usa `setColorAt`, que
+é o que permite variar tom dentro de um time sem quebrar o InstancedMesh
+(uma malha por time é o que torna 676 pilastras viáveis).
+Esponja amarelo-esverdeada, coral vinho-rosado, cada uma com deriva de
+matiz/saturação por instância. Paleta dos pinguins realinhada aos dois
+times.
+
+ARMA
+------
+Bazuca mais curta e ponta padronizada nos dois esquadrões — eles já se
+distinguem pela cor do equipamento, e dar silhuetas de bocal diferentes
+fazia o par parecer dois props sem relação em vez de duas versões da mesma
+ferramenta.
+E o tiro agora nasce na PONTA DO CANO: o modelo expõe um nó `muzzleTip` e o
+código de disparo pergunta a posição dele em espaço de mundo. Antes o tiro
+saía de um offset fixo em relação ao rig — e como a arma oscila entre a
+pose de ombro e a de mira, um offset fixo nasce no ar na maior parte da
+animação.
+
+SOMBRA
+--------
+Sol elevado. A 45 graus a sombra é tão longa quanto o objeto é alto, o que
+na escala do pinguim engolia a silhueta. Elevar encurta o lance mantendo a
+sombra de contato legível — e o tom da luz foi puxado para o quente, que é
+como a cena começa a caminhar para o fim de tarde tropical sem escurecer:
+a temperatura vem da LUZ, não de repintar cada material.
+
+O que NÃO entrou (próximo passe):
+- HUD de contadores (esponja / coral / dinheiro) com bounce por coleta.
+- Tela de vitória: prêmio, pinguim comemorando, pontos, tempo, ranking de
+  3 estrelas por velocidade e por tiros desperdiçados.
+- Trilha sonora de mar/gaivota e ambiente cozy.
+- Remodelo da popa a partir do concept (volumetria, altura do muro,
+  distância do chão do barco até a linha d'água).
+- Redemoinho como superfície girada em vez de buraco.
+- Linhas da esteira com recorte orgânico igual ao da espuma.
+- Boia idêntica à referência (anéis vermelho/branco empilhados).

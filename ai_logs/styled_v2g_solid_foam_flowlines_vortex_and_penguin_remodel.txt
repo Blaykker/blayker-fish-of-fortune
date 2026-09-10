@@ -1,0 +1,106 @@
+styled_fof_version — v2g: espuma sólida, esteira invisível, redemoinho em
+funil, pinguim remodelado, barco elevado com perspectiva exagerada
+============================================================================
+
+ESPUMA: DE FUMAÇA PARA FORMA
+------------------------------
+O problema não era a intensidade, era a PRIMITIVA. A faixa vinha de um
+traço borrado, e borrão em volta de um objeto lê como fumaça, não como
+espuma — espuma de desenho tem borda dura, e é a FORMA que faz o trabalho.
+Refeita: contorno ondulado preenchido, zero blur.
+
+Detalhe de construção que importa: a faixa é o preenchimento do contorno
+externo com o interno furado por `destination-out`, não um traço ao longo
+do contorno. Traço centra a espessura na linha e derrama metade dela para
+DENTRO, por cima do objeto; furar dá uma faixa de espessura constante e
+controlável, encostada por fora da silhueta.
+
+Também estreitei bastante a faixa depois do primeiro teste: sólida e grossa
+lia como um halo branco, sólida e fina lê como espuma.
+
+PEIXES NADANDO DE RÉ
+----------------------
+Bug real, exatamente como o cliente descreveu. A cauda está em +Z local,
+então o modelo OLHA para -Z. Girando (0,0,-1) em torno de Y por t dá
+x' = -sen(t); para apontar em +X é preciso sen(t) = -1, ou seja t = -90°.
+O código tinha +90°, e todo cardume atravessava a baía de ré.
+
+REFLEXOS SEM PONTAS (Wind Waker)
+----------------------------------
+Um campo de bordas de Worley se encontra em junções em Y afiadas onde três
+células se tocam — e essas pontas são exatamente o que a direção de arte
+rejeitou. Duas correções somadas: elevar a borda a uma potência (a métrica
+cresce mais rápido justo no canto, então uma curva que cai rápido puxa o
+canto para dentro sem mexer no meio da aresta) e um passe de blur no campo
+inteiro. A água do Wind Waker não tem um segmento reto nem um canto em lugar
+nenhum — é tudo arco — e um Voronoi cru é só segmento reto e canto; o blur
+é o que converte um no outro.
+A cor da espuma agora percorre TRÊS tons (branco, ~10% azul-marinho, ~10%
+azul-violeta) por duas amostras lentas em eixos diferentes, em vez de
+interpolar ao longo de uma linha só.
+
+ESTEIRA INVISÍVEL
+-------------------
+A laje do canal sumiu; sobraram as linhas de fluxo. A textura é usada como
+`map` E `alphaMap`, com fundo transparente, então o que renderiza são os
+traços e nada mais — a rede de cáusticos e o leito atravessam o loop sem
+interrupção. Material trocado para `MeshBasicMaterial`: são realces de água
+em movimento, e passá-los pela rampa de sombra deixava metade do loop mais
+escuro que a outra só por causa de para que lado aquele trecho olhava.
+
+REDEMOINHO EM FUNIL
+---------------------
+Deixou de ser um disco. Agora é uma `LatheGeometry` cujo perfil cai do raio
+da superfície até uma garganta estreita, com paredes CÔNCAVAS (t^1.8) em vez
+de cone reto — um vórtice real alarga perto da superfície e fecha rápido
+descendo. Gira continuamente: girar a malha é o que vende o giro, porque uma
+espiral parada lê como decalque pintado por melhor que seja a textura.
+Em volta, três anéis de espuma em fases diferentes, crescendo com curva
+suavizada (não linear — espuma jogada por um vórtice sai rápido e depois
+deriva; crescimento linear lê como pulso mecânico) e com uma
+contra-rotação, para saírem em curva em vez de expandirem retos.
+
+PINGUIM
+---------
+Bico reduzido a um biquinho — o cone anterior lia como focinho de cima e
+disputava a "ponta" da silhueta com a bazuca. Mochila retangular de tampa
+CHATA de propósito: aquela face é a superfície do contador, e uma tampa
+arredondada entortaria o número nela nesta câmera. O modelo declara o ponto
+de ancoragem do contador (`userData.ammoAnchor`), então mexer na mochila
+depois não deixa o número para trás.
+A arma virou bazuca longa o bastante para ser a ponta do modelo visto de
+cima, mantendo bocais opostos por esquadrão (funil largo x cano estreito) —
+estreito contra flarado é a diferença que sobrevive no tamanho de celular.
+O coice agora chuta a ARMA além do corpo, e inclina o cano para cima: recuo
+que só translada lê como o modelo escorregando, e é a inclinação que faz
+ler como tiro. Prego em tom de metal escuro levemente azulado, sem emissivo
+— um projétil brilhante brigaria com a espuma pela atenção.
+
+BARCO
+-------
+Convés bem acima da linha d'água. Dois motivos, e o segundo era um bug de
+verdade: um convés na linha d'água lê como balsa, E — como o filme d'água e
+os peixes por baixo dele são camadas transparentes desenhadas depois do
+casco opaco — qualquer bicho passando na altura do convés aparecia ATRAVÉS
+da madeira. Subir o convés põe a tripulação inteira acima da linha onde nada
+pode passar por trás.
+Casco alargado na POPA (a ponta mais próxima da câmera). Um barco real
+afunila ao contrário, mas a câmera é ortográfica e achata tudo no mesmo
+tamanho — o exagero é como o lado de perto ganha peso, o mesmo truque de
+uma grande-angular, feito na geometria porque a projeção não o faz.
+Proa puxada para o norte para o casco conter as TRÊS fileiras visíveis.
+
+Testado via `npm run build` (limpo) + Playwright em 3 viewports: zero erros
+de JS ou de shader; teste de clique de ponta a ponta sem mudança de
+mecânica.
+
+O que ficou de fora / a confirmar:
+- As esponjas ficaram rosa como pedido, e por isso o coral rígido foi
+  escurecido para vermelho profundo: rosa e vermelho vizinhos derrubavam o
+  contraste do xadrez, que é informação de gameplay, não decoração. Se a
+  leitura ainda estiver fraca no device, o caminho é mudar o VALOR de um dos
+  dois, não a matiz.
+- O casco continua de paredes verticais (sem flare vertical), e a proposta
+  do píer com barquinho separado da imagem 1 segue não implementada.
+- A superfície da água continua um plano: sem ondulação de silhueta e sem
+  refração do que está submerso.

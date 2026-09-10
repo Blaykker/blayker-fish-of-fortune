@@ -1,0 +1,164 @@
+styled_fof_version — v2b: profundidade real da água, cáusticos, espuma
+animada e toon shading da superfície
+============================================================================
+
+Contexto: o passe v2 já tinha trocado os placeholders por modelos
+definitivos (corais, boias em torus, pinguim, barco) e tinha uma "água"
+que era, honestamente, um plano turquesa translúcido 0.22 unidades acima
+da areia. Este passe ataca só o CENÁRIO — a coluna d'água — e não encosta
+em nenhuma mecânica, câmera ou valor de layout.
+
+Direcionamento recebido (resumo do brief do usuário, com imagem de
+referência anexada):
+- Água rasa e cristalina, dando para enxergar a areia e os corais no fundo.
+- O conceito central, nas palavras dele: "da areia para a superfície da
+  água tem alguma distância... ou sobe tudo, ou deixa o fundo mais profundo
+  para dar essa ilusão, e a sombra projetada poder ficar na superfície da
+  água E no fundo na areia".
+- Superfície com espuma ANIMADA dando sensação de movimento.
+- Tudo em estética toon shading.
+
+O DIAGNÓSTICO (por que a versão anterior não lia como água)
+------------------------------------------------------------
+O problema não era a cor nem o material — era a DISTÂNCIA. Com os dois
+planos a 0.22 unidades um do outro, o sol projetava as duas sombras
+praticamente nos mesmos pixels da tela, então não existia nenhuma pista de
+profundidade: lia como "uma folha turquesa com areia impressa nela".
+
+Das duas saídas que o usuário ofereceu ("ou sobe tudo, ou deixa o fundo
+mais profundo"), foi escolhida a SEGUNDA, e por um motivo concreto: o plano
+de jogo inteiro (esteira, boias, pinguins, grade) vive em y≈0, e todos os
+valores de layout/câmera foram calibrados ao longo dos passes da V1 em
+cima disso. Subir a superfície teria movido o jogo inteiro na tela e
+quebrado tudo aquilo. Afundar a areia não move nada — só abre espaço
+embaixo.
+
+A PILHA DE PROFUNDIDADE (4 camadas, todas em config.js -> WATER)
+-----------------------------------------------------------------
+  y ≈ 0.00   plano de jogo (esteira, boias, pinguins, pontas de coral)
+  surfaceY   filme de água translúcido + espuma animada  [RECEBE SOMBRA]
+  columnY    névoa turquesa = a COLUNA D'ÁGUA            [não recebe sombra]
+  causticsY  teia de luz cáustica se movendo sobre a areia
+  seabedY    areia opaca iluminada + corais decorativos  [RECEBE SOMBRA]
+
+A dupla projeção de sombra sai de graça da luz direcional, MAS só se o vão
+for grande o bastante: com o sol a 45° de elevação, a sombra do fundo cai
+exatamente `seabedY` unidades na diagonal em relação à sombra da
+superfície. Esse deslocamento É a pista de profundidade.
+
+Valor medido, não chutado: -2.4 (primeira tentativa) deslocava ~1.7
+unidades por eixo, o que transformava os grandes projetores (o barco/doca,
+que tem 18 unidades de largura, e o anel da esteira) em manchas escuras
+atravessando meia tela, já sem nenhuma relação legível com o que as
+projetou. -1.7 mantém as duas sombras claramente SEPARADAS (que é o
+objetivo) e ainda é ~8x o vão do passe anterior.
+
+A CAMADA QUE FEZ A DIFERENÇA: a névoa da coluna d'água
+--------------------------------------------------------
+Com areia funda + sombras cheias, apareceram dois problemas ao mesmo tempo:
+(a) as sombras do fundo batiam em força total e viravam faixas pretas duras
+e (b) areia é quente e clara, então UM filme turquesa em cima compõe
+verde-sálvia, não turquesa.
+
+Os dois têm a mesma causa: não havia água ENTRE as camadas, só um filme por
+cima. A solução foi um plano de névoa turquesa pendurado no meio da pilha
+que NÃO recebe sombra — exatamente o que um metro de água faz: espalha a
+luz e lava o que está embaixo. Tudo abaixo dela (areia, cáusticos, os
+"pés" submersos dos corais) é visto através dela e fica mais azulado e mais
+opaco que os props da superfície — a diferença de contraste entre as duas
+metades vira, ela mesma, uma pista de profundidade.
+
+A BAÍA TEM BORDA (fade radial)
+--------------------------------
+A areia não se estende infinitamente: um alphaMap radial dissolve o plano
+do fundo em água aberta funda em direção às bordas do quadro. Isso dá o
+"areia rasa no meio, turquesa mais fundo em volta" da referência, e de
+quebra resolve as sombras gigantes que antes caíam em areia colada na
+borda da tela sem nada que as ancorasse. Detalhe técnico que viabiliza
+isso: `repeat` é por TEXTURA, não por material — o mapa de cor da areia
+repete 7x enquanto o alphaMap fica em 1x cobrindo o plano inteiro uma vez
+só.
+
+TOON SHADING E ESPUMA ANIMADA
+-------------------------------
+- A superfície é `MeshToonMaterial` com o MESMO gradientMap de 3 tons já
+  compartilhado por toda a cena, então a água banda igual ao resto — espuma
+  incluída (a espuma é um mapa de COR, não um overlay, justamente para
+  entrar no ramp toon em vez de flutuar por cima dele).
+- 4 novas texturas procedurais desenhadas em canvas (nenhum asset externo),
+  todas TILEÁVEIS porque três delas têm o UV animado — uma textura não
+  tileável mostraria uma emenda dura varrendo a baía a cada volta do
+  offset. Para isso existe um helper `drawWrapped` que desenha cada
+  elemento nas 5 posições espelhadas das bordas.
+- Os cáusticos são MeshBasicMaterial ADITIVO e de propósito NÃO recebem
+  toon shading: cáustico é luz chegando no fundo, e passar luz pelo ramp de
+  sombra faria o sol escurecer a própria luz.
+- Animação = puro UV scrolling (`texture.offset`), nenhuma geometria se
+  move: sem trabalho de vértice, sem draw call extra, sem recompilar shader.
+  As três camadas rolam em velocidades e direções DIFERENTES de propósito —
+  velocidades iguais fundiriam tudo numa folha só aos olhos, enquanto a
+  divergência lê como profundidades distintas deslizando uma sobre a outra.
+
+O CANAL DA CORRENTEZA GANHOU UV (bug latente encontrado)
+----------------------------------------------------------
+A fita da esteira é uma geometria "lofteada" à mão e NUNCA teve atributo
+`uv` — ela só tinha sido construída para carregar uma cor chapada, então
+qualquer textura rolando nela era impossível. As UVs passaram a ser
+geradas no mesmo laço: U corre ao longo do CAMINHO (em unidades de mundo
+divididas por um comprimento fixo, para a escala da espuma não mudar se a
+esteira mudar de tamanho) e V atravessa a largura do canal. Rolar U
+portanto arrasta a espuma exatamente na direção do fluxo, curvas incluídas.
+As setas de direção continuam lá — elas são a pista explícita e legível
+num relance; a espuma adiciona o movimento contínuo da água por baixo delas.
+
+OUTROS AJUSTES DESTE PASSE
+----------------------------
+- Corais e esponjas da grade ganharam um "pé" submerso, visível através do
+  filme: o obstáculo agora lê como ancorado na baía em vez de apoiado em
+  cima dela. Param bem antes do fundo de propósito — pés até a areia
+  murariam o fundo debaixo do tabuleiro inteiro e matariam a leitura de
+  profundidade exatamente onde o jogador mais olha.
+- BUG REAL corrigido no caminho: o pé da esponja precisa de
+  `.toNonIndexed()`. IcosahedronGeometry é não-indexada e CylinderGeometry
+  é indexada, e `mergeGeometries` se recusa a mesclar um conjunto misto —
+  ela retorna null e loga um erro, o que apareceria como uma grade INVISÍVEL
+  em vez de uma exceção (falha silenciosa, difícil de rastrear depois).
+- Outro cuidado do mesmo tipo: as pontas do coral passaram a ser ancoradas
+  numa fração fixa de `height` em vez de em `baseH` — `baseH` agora cresce
+  com a profundidade submersa, e derivar a altura das pontas dele empurraria
+  as pontas para cima toda vez que o pé ficasse mais longo.
+- `sunLight.shadow.intensity` (com feature-detect: só existe no three r165+,
+  e atribuir uma propriedade inexistente pareceria "o valor não fez efeito")
+  suavizando as sombras globalmente.
+- Corais decorativos coloridos espalhados no fundo, nas margens do quadro,
+  como na referência. Ficaram menores que os corais de gameplay de
+  propósito: decoração com o mesmo peso visual de uma célula jogável
+  compete com o tabuleiro pela atenção. Cores escolhidas fora das duas
+  cores de time, para que um coral decorativo nunca possa ser confundido
+  com um alvo.
+- Correção de posicionamento desses decorativos: a primeira tentativa usou
+  um recuo fixo (do tamanho da esteira) em todas as alturas e estacionou
+  quase todos fora da tela — o quadro tem a mesma largura de cima a baixo,
+  mas a esteira é bem mais larga que o bloco da fila, então a margem de
+  areia visível é uma tira fina ao lado da esteira e uma faixa generosa ao
+  lado da doca. Agora o recuo é calculado por faixa.
+
+Testado via `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS. Movimento confirmado
+numericamente comparando dois frames com 1.2s de diferença (~58k pixels
+mudaram, ou seja, a água está de fato animando, não é uma impressão).
+Teste de clique real de ponta a ponta (seleção -> entrada na esteira ->
+tiro -> destruição de pilar -> contador 5/5 -> 4/5) confirmando que nada
+de gameplay mudou.
+
+O que NÃO foi feito (sinalizado para os próximos passes):
+- A superfície não tem deformação/onda de verdade: é um plano com textura
+  rolando. Uma malha com deslocamento senoidal no vertex shader daria
+  ondulação real de silhueta nas bordas.
+- Não há refração/distorção do que está embaixo da água (o fundo é visto
+  reto através do filme, sem deslocamento óptico).
+- Não há linha de espuma nas margens onde a água encontra os props
+  (shoreline foam), que na referência aparece contornando o barco.
+- O redemoinho final continua a textura estática de espiral do passe
+  anterior — não foi integrado ao sistema de UV scrolling desta pass, o que
+  seria a evolução natural dele (girar o offset em coordenada polar).

@@ -1,0 +1,129 @@
+styled_fof_version — v2d: escala das texturas, barco modelado do concept,
+espuma de contato legível em mobile, corais verde/roxo
+============================================================================
+
+Contexto: o passe v2c colocou o shader de água toon no lugar. Este passe é
+de proporção e leitura — quase todo o feedback aqui é sobre TAMANHO
+aparente, não sobre técnica.
+
+Feedback recebido:
+- Texturas de água grandes demais, fora de proporção com o personagem.
+- Não gostou da estética de LINHAS que apareceu.
+- O detalhe do contato do coral com a superfície da água está pequeno
+  demais, quase não dá para ver.
+- Lembrete explícito: a leitura é para MOBILE, coisas pequenas e com muito
+  detalhe numa área pequena não vão ser vistas.
+- Corais em verde e roxo.
+- Concept da proa do barco com as filas de pinguins em cima dele.
+
+O PRINCÍPIO QUE ORGANIZOU O PASSE
+-----------------------------------
+Três dos itens acima são o mesmo problema visto de ângulos diferentes:
+detalhe dimensionado em unidades de mundo, sem referência ao tamanho que
+ele vai ocupar na tela. A régua passou a ser o pinguim da fila (~3 unidades
+de mundo de largura): célula de cáustico ~1.4 unidades (metade de um
+pinguim), marca de espuma ~0.9, tábua do convés ~1.25. Nenhum detalhe
+ficou abaixo disso de propósito — abaixo de meio pinguim vira ruído num
+celular, não textura.
+
+A ESTÉTICA DE LINHAS: DE ONDE ELA VINHA (dois lugares, mesma causa)
+---------------------------------------------------------------------
+1. A textura de areia desenhava 44 faixas onduladas HORIZONTAIS como
+   "marcas de maré". Ladrilhadas pela baía, elas liam exatamente como o que
+   eram: um padrão de linhas paralelas.
+2. A espuma do canal da correnteza desenhava riscos longos esticados na
+   direção do fluxo. Rolando, viravam linhas paralelas duras.
+
+A causa comum é que traço direcional é a primitiva errada aqui: qualquer
+coisa com um eixo compartilhado lê como pente, não como água. As duas
+foram refeitas com manchas macias sobrepostas em tamanhos aleatórios, sem
+direção dominante. No caso da correnteza vale registrar por que isso não
+custa a leitura de fluxo: o olho tira a direção do MOVIMENTO das marcas,
+não do formato delas — então elas podem ser redondas e ainda assim ler
+como correnteza. O ruído da espuma da superfície também teve o
+esticamento anisotrópico quase removido (uNoiseAspect 0.34 -> 0.85), que
+era o que transformava manchas em riscos.
+
+ESPUMA DE CONTATO: DILATAÇÃO DO DEPTH BUFFER
+----------------------------------------------
+Esse foi o item mais interessante tecnicamente. A largura da faixa de
+espuma numa intersecção depende de quão rápido a profundidade da água muda
+ali — e um pé de coral é um cilindro vertical, ou seja, a profundidade cai
+num penhasco. Resultado: a faixa saía com um ou dois pixels de largura.
+Aumentar `foamDistance` não resolve isso, porque não existe rampa de
+profundidade para percorrer; só engrossa a espuma onde o FUNDO é raso, que
+é outro efeito (e, aumentado o bastante, enche toda a área rasa da doca de
+branco — testado, ficou ruim).
+
+A correção é dilatar o depth buffer: a espuma amostra a profundidade mais
+PRÓXIMA dentro de um pequeno anel em espaço de tela (9 taps), em vez do
+valor exato daquele pixel. Isso empurra a leitura de "raso" para fora de
+cada silhueta por um número fixo de PIXELS. A unidade importa: o requisito
+é sobre o que resolve num celular, então a faixa mantém a espessura
+aparente independente de escala de mundo ou de zoom.
+
+Só a ESPUMA lê a profundidade dilatada; o gradiente de cor continua lendo a
+real. Dilatar os dois colocaria um halo de água da cor errada em volta de
+cada prop.
+
+Com a dilatação carregando a espessura, `foamDistance` foi ao contrário —
+caiu de 1.15 para 0.32 — senão a água rasa inteira da doca vira espuma.
+
+O BARCO
+---------
+Modelado a partir do concept: casco com proa afunilada apontando para o
+norte, amuradas dos dois lados e convés de tábuas onde a fila inteira fica.
+Substitui a prancha chapada do passe anterior, que deixava as duas
+primeiras fileiras aparentemente em pé sobre água aberta.
+
+Notas de construção:
+- O contorno do casco é uma `THREE.Shape`, com o contorno interno furado
+  como HOLE: uma extrusão só produz o anel de amurada inteiro — paredes,
+  topo e tudo — em vez de exigir uma malha por lado e um meia-esquadria na
+  proa.
+- BUG REAL no caminho: o contorno interno terminava 1 unidade DEPOIS do
+  externo na popa. Um furo que sai para fora da sua própria shape não pode
+  ser triangulado, então a `ExtrudeGeometry` produziu silenciosamente uma
+  LAJE SÓLIDA — o casco renderizou como uma massa bege preenchida e a fila
+  ficou enterrada até o joelho dentro dela. Toda aresta interna precisa
+  ficar estritamente dentro da externa.
+- A proa é feita de segmentos RETOS, não de curva: o concept é facetado, e
+  além disso uma curva suave nessa escala só lê como um blob arredondado
+  quando tem 40px de altura num celular.
+- Tudo é autorado direto em Z de MUNDO, com o y da shape negado, porque a
+  malha é rotacionada -90° em X (para as paredes ficarem em pé) e essa
+  rotação mapeia (x,y,z) local para (x, z, -y) de mundo. Errar esse sinal
+  constrói o barco navegando de ré.
+- O convés usa `ShapeGeometry`, cujas UVs saem das próprias coordenadas da
+  shape — que aqui são unidades de mundo. Então o `repeat` da textura de
+  tábuas é definido em escala de mundo e cada tábua sai do mesmo tamanho
+  independente do comprimento do casco.
+- O casco afunda um pouco abaixo da linha d'água de propósito: assim ele
+  ganha o anel de espuma de graça, pelo termo de intersecção do shader.
+- `queueSlotPosition` agora devolve a altura do CONVÉS em vez de 0. O tween
+  de pegar-e-voar interpola dessa posição até a esteira, então ele já
+  carrega o degrau até a água sozinho — nenhuma outra mudança foi precisa.
+
+OUTROS
+--------
+- Times recoloridos para verde (coral rígido) e roxo (esponja macia).
+- `sandRepeat`, `causticsRepeat` e `foamNoiseScale` todos reescalados
+  contra a régua do pinguim descrita acima.
+- A subida do fundo nas bordas do quadro foi reduzida: com a dilatação
+  ativa, um fundo alto demais na borda virava uma faixa de espuma no canto
+  da tela sem nada que a justificasse.
+
+Testado via `npm run build` (limpo) + Playwright em 3 viewports
+(420x747, 390x844, 412x915): zero erros de JS ou de compilação de shader.
+Teste de clique de ponta a ponta (seleção na fila em cima do convés ->
+entrada na esteira -> tiro -> contador 5/5 -> 4/5) confirmando que a
+mudança de altura da fila não quebrou nada da mecânica.
+
+O que NÃO foi feito (sinalizado):
+- A popa do barco fica fora do quadro; não há detalhe traseiro (leme,
+  motor, cordas) porque nada dele aparece.
+- O casco é de paredes verticais; o concept tem um leve alargamento
+  (flare) para fora que não foi modelado.
+- A superfície da água continua um plano — sem ondulação de silhueta e sem
+  refração do que está submerso.
+- O redemoinho final continua a textura estática de espiral.
